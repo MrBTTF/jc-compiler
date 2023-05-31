@@ -1,4 +1,4 @@
-use crate::elf::structs::Sliceable;
+use crate::emitter::elf::structs::Sliceable;
 
 #[repr(u8)]
 pub enum Register {

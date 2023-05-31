@@ -1,6 +1,6 @@
 use std::{ffi::CString, mem};
 
-use crate::amd64::*;
+use crate::emitter::amd64::*;
 
 use super::defs;
 
