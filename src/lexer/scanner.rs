@@ -81,7 +81,7 @@ pub fn scan(source_code: String) -> Vec<Vec<Token>> {
     while start < source_code.len() {
         let (token, advanced) = scan_token(&source_code[start..]);
         if let Some(token) = token {
-            println!("Token: {:?}", token);
+            // println!("Token: {:?}", token);
             if token == Token::Newline {
                 tokens.push(line.clone());
                 line.clear();
@@ -91,6 +91,7 @@ pub fn scan(source_code: String) -> Vec<Vec<Token>> {
         }
         start += advanced;
     }
+    tokens.push(line.clone());
 
     tokens
 }

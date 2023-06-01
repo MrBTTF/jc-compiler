@@ -1,5 +1,7 @@
 use std::{env, fs};
 
+use emitter::ast::{AstPrinter, Visitor};
+
 mod emitter;
 mod lexer;
 mod parser;
@@ -12,6 +14,8 @@ fn main() {
 
     let tokens = lexer::scanner::scan(source_code);
     let ast = parser::parse(tokens);
+    let output = AstPrinter {}.visit_statement_list(&ast);
+    println!("{output}");
 
     // build_elf()
 }

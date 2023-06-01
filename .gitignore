@@ -1,2 +1,4 @@
-/target
+target/
 .vscode
+bin/
+example/

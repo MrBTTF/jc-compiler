@@ -4,6 +4,7 @@ use self::elf::structs::*;
 
 mod amd64;
 pub mod elf;
+pub mod ast;
 
 pub fn build_elf() {
     let data_header = &build_data_section();
