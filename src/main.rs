@@ -1,12 +1,14 @@
 use std::{env, fs};
 
-use emitter::ast::{AstPrinter, Visitor};
+use emitter::ast::Visitor;
+
+use parser::ast_printer::AstPrinter;
 
 mod emitter;
 mod lexer;
 mod parser;
 
-// use emitter::build_elf;
+use emitter::build_elf;
 
 fn main() {
     let source_filename = env::args().nth(1).expect("Missing source filename");
@@ -17,5 +19,5 @@ fn main() {
     let output = AstPrinter {}.visit_statement_list(&ast);
     println!("{output}");
 
-    // build_elf()
+    build_elf(&ast);
 }

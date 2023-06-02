@@ -1,3 +1,5 @@
+pub mod ast_printer;
+
 use crate::{
     emitter::ast::{self, StatementList},
     lexer::token::Token,

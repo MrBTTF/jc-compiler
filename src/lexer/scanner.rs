@@ -48,10 +48,11 @@ fn number(s: &str, i: usize) -> (Option<Token>, usize) {
 
 fn identifier(s: &str, i: usize) -> (Option<Token>, usize) {
     let c = s.chars().nth(i).unwrap();
-    if c.is_alphanumeric() {
+    if c.is_alphanumeric() || ['\\', '_', '!'].contains(&c) {
         (None, i + 1)
     } else {
-        (Some(Token::Ident(s[..i].to_string())), i)
+        let string = s[..i].to_string().replace("\\n", "\n");
+        (Some(Token::Ident(string)), i)
     }
 }
 

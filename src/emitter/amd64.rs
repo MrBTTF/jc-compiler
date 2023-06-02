@@ -1,5 +1,8 @@
 use crate::emitter::elf::structs::Sliceable;
 
+pub const STDOUT_FD: i32 = 0x1;
+pub const SYS_WRITE: i32 = 0x4;
+
 #[repr(u8)]
 pub enum Register {
     Eax = 0x0,

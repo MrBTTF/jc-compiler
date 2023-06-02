@@ -1,10 +1,10 @@
-use std::{ffi::CString, mem};
+use std::{collections::HashMap, ffi::CString, mem};
 
-use crate::emitter::amd64::*;
+use crate::emitter::{amd64::*, ast};
 
 use super::defs;
 
-const VIRTUAL_ADDRESS_START: u32 = 0x08000000;
+pub const VIRTUAL_ADDRESS_START: u32 = 0x08000000;
 pub const SEGMENT_OFFSET: u32 = 0x1000;
 const ENTRY_POINT: u32 = VIRTUAL_ADDRESS_START + SEGMENT_OFFSET;
 
@@ -302,8 +302,21 @@ pub fn build_text_section() -> Vec<u8> {
     ].concat()
 }
 
-pub fn build_data_section() -> Vec<u8> {
-    CString::new("Hello, world!\n").unwrap().into_bytes()
+pub fn build_data_section(literals: HashMap<ast::Ident, (ast::Literal, u32)>) -> Vec<u8> {
+    let mut literals: Vec<_> = literals
+        .iter()
+        .map(|(id, (lit, data_loc))| (*data_loc, id.clone(), lit.clone()))
+        .collect();
+    literals.sort_by_key(|(data_loc, _, _)| *data_loc);
+    literals
+        .iter()
+        .fold(vec![], |mut acc, (_, _, lit)| match lit {
+            ast::Literal::String(string) => {
+                acc.extend(CString::new(string.clone()).unwrap().into_bytes());
+                acc
+            }
+            _ => todo!(),
+        })
 }
 
 #[rustfmt::skip]

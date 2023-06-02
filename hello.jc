@@ -1,2 +1,4 @@
-let a = .hello
+let a = .Hello\n
 print(a)
+let b = .Nommer33!\n
+print(b)
