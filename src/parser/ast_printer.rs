@@ -15,10 +15,10 @@ impl Visitor<String> for AstPrinter {
     fn visit_statement(&mut self, statement: &Statement) -> String {
         match statement {
             Statement::Expression(expr) => self.visit_expression(expr),
-            Statement::Assignment(ident, expr) => {
+            Statement::Assignment(Assignment(ident, expr, assign_type)) => {
                 let s1 = self.visit_ident(ident);
                 let s2 = self.visit_expression(expr);
-                s1 + " = " + &s2
+                format!("{assign_type} {s1} = {s2}")
             }
         }
     }

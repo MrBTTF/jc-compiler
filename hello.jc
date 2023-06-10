@@ -1,4 +1,4 @@
-let a = .Hello\n
+let a = .Hello World!\n
 print(a)
-let b = .Nommer33!\n
+const b = .Nommer33\n
 print(b)

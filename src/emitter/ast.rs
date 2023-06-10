@@ -1,10 +1,44 @@
+use std::fmt::Display;
+
 pub struct StatementList(pub Vec<Statement>);
 
 #[derive(Debug)]
 pub enum Statement {
     Expression(Expression),
-    Assignment(Ident, Expression),
+    Assignment(Assignment),
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum AssignmentType {
+    Let,
+    Const,
+}
+impl Display for AssignmentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AssignmentType::Let => write!(f, "let"),
+            AssignmentType::Const => write!(f, "const"),
+        }
+    }
+}
+
+impl TryFrom<&str> for AssignmentType {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        if s == "let" {
+            Ok(AssignmentType::Let)
+        } else if s == "const" {
+            Ok(AssignmentType::Const)
+        } else {
+            Err(format!("invalid assignemnt type: {s}"))
+        }
+    }
+}
+
+#[derive(Debug)]
+
+pub struct Assignment(pub Ident, pub Expression, pub AssignmentType);
 
 #[derive(Debug)]
 pub enum Expression {

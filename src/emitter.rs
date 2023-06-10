@@ -42,9 +42,25 @@ pub fn build_elf(ast: &ast::StatementList) {
     .unwrap();
 }
 
+#[derive(Clone)]
+pub struct Data {
+    lit: ast::Literal,
+    data_loc: u32,
+    assign_type: ast::AssignmentType,
+}
+impl Data {
+    fn new(lit: ast::Literal, data_loc: u32, assign_type: ast::AssignmentType) -> Data {
+        Data {
+            lit,
+            data_loc,
+            assign_type,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct DataBuilder {
-    literals: HashMap<ast::Ident, (ast::Literal, u32)>,
+    literals: HashMap<ast::Ident, Data>,
     length: u32,
 }
 
@@ -59,11 +75,13 @@ impl DataBuilder {
     fn visit_statement(&mut self, statement: &ast::Statement) {
         match statement {
             ast::Statement::Expression(_) => (),
-            ast::Statement::Assignment(id, expr) => match expr {
+            ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
                     let data_loc = self.length;
-                    self.literals
-                        .insert(id.clone(), (lit.clone(), data_loc as u32));
+                    self.literals.insert(
+                        id.clone(),
+                        Data::new(lit.clone(), data_loc as u32, *assign_type),
+                    );
                     self.length += match lit.clone() {
                         ast::Literal::String(string) => string.len(),
                         _ => 0,
@@ -73,19 +91,25 @@ impl DataBuilder {
             },
         }
     }
+
+    fn visit_assignment(&mut self, statement: &ast::Statement) {}
 }
 
 pub struct ElfEmitter {
-    literals: HashMap<ast::Ident, (ast::Literal, u32)>,
+    literals: HashMap<ast::Ident, Data>,
 }
 
 impl ElfEmitter {
     fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
-        let (lit, data_loc) = match expr {
+        let Data {
+            lit,
+            data_loc,
+            assign_type,
+        } = match expr {
             ast::Expression::Literal(ast::Literal::Ident(id)) => self
                 .literals
-                .get(&id)
-                .expect(&format!("undefined variable: {}", id.value)),
+                .get(id)
+                .unwrap_or_else(|| panic!("undefined variable: {}", id.value)),
             _ => todo!(),
         };
 
@@ -123,7 +147,7 @@ impl Visitor<Vec<u8>> for ElfEmitter {
 
                 _ => vec![],
             },
-            ast::Statement::Assignment(id, expr) => vec![],
+            ast::Statement::Assignment(_) => vec![],
         }
     }
 

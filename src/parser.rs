@@ -1,14 +1,14 @@
 pub mod ast_printer;
 
 use crate::{
-    emitter::ast::{self, StatementList},
+    emitter::ast::{self, AssignmentType, StatementList},
     lexer::token::Token,
 };
 
 /*
 statement_list := statement*
 statement := assignment | expression
-assignment := "let" ident "=" expression
+assignment := ("let" | "const") ident "=" expression
 expression := literal | call
 call := ident(expression)
 literal := ident | string | number
@@ -16,23 +16,26 @@ string := . ident
  */
 
 fn statement(tokens: &[Token]) -> Option<ast::Statement> {
-    if let Some((ident, expr)) = assignment(tokens) {
-        return Some(ast::Statement::Assignment(ident, expr));
-    } else if let Some(expr) = expression(tokens) {
-        return Some(ast::Statement::Expression(expr));
-    }
     assignment(tokens)
-        .map(|(ident, expr)| ast::Statement::Assignment(ident, expr))
+        .map(ast::Statement::Assignment)
         .or(expression(tokens).map(ast::Statement::Expression))
 }
 
-fn assignment(tokens: &[Token]) -> Option<(ast::Ident, ast::Expression)> {
-    let id = match &tokens[..3] {
-        [Token::Ident(keyword), Token::Ident(id), Token::Equal] if keyword == "let" => ident(id),
+fn assignment(tokens: &[Token]) -> Option<ast::Assignment> {
+    let (assign_type, id) = match &tokens[..3] {
+        [Token::Ident(keyword), Token::Ident(id), Token::Equal]
+            if matches!(keyword.as_str(), "let" | "const") =>
+        {
+            if let Ok(assign_type) = keyword.as_str().try_into() {
+                (assign_type, ident(id))
+            } else {
+                return None;
+            }
+        }
         _ => return None,
     };
     let expr = expression(&tokens[3..]);
-    expr.map(|expr| (id, expr))
+    expr.map(|expr| ast::Assignment(id, expr, assign_type))
 }
 
 fn expression(tokens: &[Token]) -> Option<ast::Expression> {
@@ -42,11 +45,24 @@ fn expression(tokens: &[Token]) -> Option<ast::Expression> {
         return Some(ast::Expression::Call(id, Box::new(expr)));
     }
     None
+    // panic!("invalid expression: {:?}", &tokens)
 }
 
 fn literal(tokens: &[Token]) -> Option<ast::Literal> {
+    if tokens.first().is_some_and(|t| *t == Token::Dot) {
+        let s = tokens.iter().skip(1).fold(String::new(), |mut acc, t| {
+            if let Token::Ident(id) = t {
+                acc += id;
+            }
+            acc + " "
+        });
+        let s = &s[..s.len() - 1];
+        if s.is_empty() {
+            panic!("invalid literal: {:?}", &tokens);
+        }
+        return Some(ast::Literal::String(string(s)));
+    }
     match tokens {
-        [Token::Dot, Token::Ident(str)] => Some(ast::Literal::String(string(str))),
         [Token::Ident(id)] => Some(ast::Literal::Ident(ident(id))),
         [Token::Number(num)] => Some(ast::Literal::Number(number(num))),
         _ => None,

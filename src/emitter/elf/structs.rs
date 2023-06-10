@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::CString, mem};
 
-use crate::emitter::{amd64::*, ast};
+use crate::emitter::{self, amd64::*, ast};
 
 use super::defs;
 
@@ -302,10 +302,19 @@ pub fn build_text_section() -> Vec<u8> {
     ].concat()
 }
 
-pub fn build_data_section(literals: HashMap<ast::Ident, (ast::Literal, u32)>) -> Vec<u8> {
+pub fn build_data_section(literals: HashMap<ast::Ident, emitter::Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
-        .map(|(id, (lit, data_loc))| (*data_loc, id.clone(), lit.clone()))
+        .map(
+            |(
+                id,
+                emitter::Data {
+                    lit,
+                    data_loc,
+                    assign_type,
+                },
+            )| (*data_loc, id.clone(), lit.clone()),
+        )
         .collect();
     literals.sort_by_key(|(data_loc, _, _)| *data_loc);
     literals
