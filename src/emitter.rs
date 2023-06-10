@@ -125,10 +125,13 @@ impl ElfEmitter {
 
 impl Visitor<Vec<u8>> for ElfEmitter {
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Vec<u8> {
-        let mut result = statement_list.0.iter().fold(vec![], |mut result, stmt| {
+        let mut result = vec![];
+        result.extend_from_slice(&[Mov32rr::build(Register::Ebp, Register::Esp)].concat());
+
+        result.extend(statement_list.0.iter().fold(vec![], |mut result, stmt| {
             result.extend(self.visit_statement(stmt));
             result
-        });
+        }));
         result.extend_from_slice(
             &[
                 Mov32::build(Register::Ebx, 0x0),
