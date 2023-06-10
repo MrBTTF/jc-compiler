@@ -1,16 +1,16 @@
 use super::token::Token;
 
-fn whitespace(s: &str, i: usize) -> (Option<Token>, usize) {
-    let c = s.chars().nth(i).unwrap();
-    if c == ' ' {
+fn whitespace(s: &str) -> (Option<Token>, usize) {
+    let c = s.chars().nth(0).unwrap();
+    if matches!(c, ' ' | '\t') {
         (Some(Token::Whitespace), 1)
     } else {
         (None, 0)
     }
 }
 
-fn newline(s: &str, i: usize) -> (Option<Token>, usize) {
-    let c = s.chars().nth(i).unwrap();
+fn newline(s: &str) -> (Option<Token>, usize) {
+    let c = s.chars().nth(0).unwrap();
     if c == '\n' {
         (Some(Token::Newline), 1)
     } else {
@@ -18,8 +18,8 @@ fn newline(s: &str, i: usize) -> (Option<Token>, usize) {
     }
 }
 
-fn operator(s: &str, i: usize) -> (Option<Token>, usize) {
-    let c = s.chars().nth(i).unwrap();
+fn operator(s: &str) -> (Option<Token>, usize) {
+    let c = s.chars().nth(0).unwrap();
     match c {
         '=' => (Some(Token::Equal), 1),
         '.' => (Some(Token::Dot), 1),
@@ -29,46 +29,72 @@ fn operator(s: &str, i: usize) -> (Option<Token>, usize) {
     }
 }
 
-fn number(s: &str, i: usize) -> (Option<Token>, usize) {
-    let c = s.chars().nth(i).unwrap();
-    if !c.is_numeric() {
-        let token = {
-            match s[..i].parse() {
-                Ok(value) => Some(Token::Number(value)),
-                Err(err) => match err.kind() {
-                    std::num::IntErrorKind::Empty => None,
-                    _ => panic!("{err}"),
-                },
-            }
-        };
-        return (token, i);
+// fn string(s: &str) -> (Option<Token>, usize) {
+//     if !s.starts_with('.') {
+//         return (None, 0);
+//     }
+//     let mut i: usize = 0;
+//     for c in s.chars() {
+//         if !c.is_alphanumeric() && !matches!(c, '\\' | '_' | '!' | ' ') {
+//             break;
+//         }
+//         i += 1;
+//     }
+//     if i == 0 {
+//         return (None, 0);
+//     }
+//     let s = s[1..i].to_string().replace("\\n", "\n");
+//     (Some(Token::Ident(s)), i)
+// }
+
+fn number(s: &str) -> (Option<Token>, usize) {
+    let mut i: usize = 0;
+
+    for c in s.chars() {
+        if !c.is_numeric() {
+            break;
+        }
+        i += 1;
     }
-    (None, i + 1)
+    if i == 0 {
+        return (None, 0);
+    }
+    let token = {
+        match s[..i].parse() {
+            Ok(value) => Some(Token::Number(value)),
+            Err(err) => match err.kind() {
+                std::num::IntErrorKind::Empty => None,
+                _ => panic!("{err}"),
+            },
+        }
+    };
+    (token, i)
 }
 
-fn identifier(s: &str, i: usize) -> (Option<Token>, usize) {
-    let c = s.chars().nth(i).unwrap();
-    if c.is_alphanumeric() || ['\\', '_', '!'].contains(&c) {
-        (None, i + 1)
-    } else {
-        let string = s[..i].to_string().replace("\\n", "\n");
-        (Some(Token::Ident(string)), i)
+fn identifier(s: &str) -> (Option<Token>, usize) {
+    let mut i: usize = 0;
+    for c in s.chars() {
+        if !c.is_alphanumeric() && !matches!(c, '\\' | '_' | '!') {
+            break;
+        }
+        i += 1;
     }
+    if i == 0 {
+        return (None, 0);
+    }
+    let s = s[..i].to_string().replace("\\n", "\n");
+    (Some(Token::Ident(s)), i)
 }
 
-type Parser = fn(&str, usize) -> (Option<Token>, usize);
+type Parser = fn(&str) -> (Option<Token>, usize);
 
 fn scan_token(s: &str) -> (Option<Token>, usize) {
-    let parsers: Vec<Parser> = vec![whitespace, newline, operator, number, identifier];
-    for parser in parsers.iter() {
-        for i in 0..s.len() {
-            let (token, advanced) = parser(s, i);
-            // dbg!(i, &token, advanced);
-            if token.is_some() {
-                return (token, advanced);
-            } else if advanced == 0 {
-                break;
-            }
+    let parsers: Vec<Parser> = vec![newline, operator, number, identifier, whitespace];
+    for (i, parser) in parsers.iter().enumerate() {
+        let (token, advanced) = parser(s);
+        // dbg!(i, &token, advanced);
+        if token.is_some() {
+            return (token, advanced);
         }
     }
 
@@ -82,7 +108,7 @@ pub fn scan(source_code: String) -> Vec<Vec<Token>> {
     while start < source_code.len() {
         let (token, advanced) = scan_token(&source_code[start..]);
         if let Some(token) = token {
-            // println!("Token: {:?}", token);
+            println!("Token: {:?}", token);
             if token == Token::Newline {
                 tokens.push(line.clone());
                 line.clear();
