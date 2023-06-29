@@ -50,7 +50,6 @@ pub struct Mov32rr {
 
 impl Mov32rr {
     pub fn build(dst: Register, src: Register) -> Vec<u8> {
-        dbg!((src as u8) << 3 | dst as u8);
         Mov32rr {
             opcode: 0x89,
             mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
@@ -60,6 +59,27 @@ impl Mov32rr {
 }
 
 impl Sliceable for Mov32rr {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Sub32 {
+    opcode: u8,
+    mod_rm: u8,
+    value: i32,
+}
+
+impl Sub32 {
+    pub fn build(reg: Register, value: i32) -> Vec<u8> {
+        Sub32 {
+            opcode: 0x81,
+            mod_rm: 3 << 6 | 5 << 3 | (reg as u8),
+            value,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Sub32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -74,3 +94,22 @@ impl SysCall {
 }
 
 impl Sliceable for SysCall {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Push32 {
+    opcode: u8,
+    value: i32,
+}
+
+impl Push32 {
+    pub fn build(value: i32) -> Vec<u8> {
+        Self {
+            opcode: 0x68,
+            value,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Push32 {}

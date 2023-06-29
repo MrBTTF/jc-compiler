@@ -1,6 +1,13 @@
 use std::{collections::HashMap, fs, io::Write};
 
-use self::{amd64::*, ast::Visitor, elf::structs::*, stdlib::print};
+use crate::emitter::stdlib::print_let;
+
+use self::{
+    amd64::*,
+    ast::{Assignment, AssignmentType, Visitor},
+    elf::structs::*,
+    stdlib::print,
+};
 
 mod amd64;
 pub mod ast;
@@ -44,9 +51,9 @@ pub fn build_elf(ast: &ast::StatementList) {
 
 #[derive(Clone)]
 pub struct Data {
-    lit: ast::Literal,
-    data_loc: u32,
-    assign_type: ast::AssignmentType,
+    pub lit: ast::Literal,
+    pub data_loc: u32,
+    pub assign_type: ast::AssignmentType,
 }
 impl Data {
     fn new(lit: ast::Literal, data_loc: u32, assign_type: ast::AssignmentType) -> Data {
@@ -77,7 +84,28 @@ impl DataBuilder {
             ast::Statement::Expression(_) => (),
             ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
-                    let data_loc = self.length;
+                    let data_loc = match assign_type {
+                        AssignmentType::Let => {
+                            self.literals.iter().fold(0_u32, |acc, (id, data)| {
+                                let mut size = if data.assign_type == AssignmentType::Let {
+                                    (match &data.lit {
+                                        ast::Literal::Ident(_) => 0,
+                                        ast::Literal::String(s) => s.len(),
+                                        ast::Literal::Number(_) => 0,
+                                    }) as u32
+                                } else {
+                                    return acc;
+                                };
+                                dbg!(lit);
+                                dbg!(size);
+                                size += 4 - (size % 4);
+                                dbg!(size);
+                                acc + size
+                            })
+                        }
+                        AssignmentType::Const => self.length,
+                    };
+
                     self.literals.insert(
                         id.clone(),
                         Data::new(lit.clone(), data_loc as u32, *assign_type),
@@ -114,9 +142,18 @@ impl ElfEmitter {
         };
 
         if let ast::Literal::String(string) = lit {
-            if id.value == "print" {
-                return print(*data_loc, string.len());
-            }
+            match assign_type {
+                AssignmentType::Let => {
+                    if id.value == "print" {
+                        return print_let(*data_loc, string.len());
+                    }
+                }
+                AssignmentType::Const => {
+                    if id.value == "print" {
+                        return print(*data_loc, string.len());
+                    }
+                }
+            };
         }
 
         panic!("no such function {}", id.value)
@@ -126,8 +163,7 @@ impl ElfEmitter {
 impl Visitor<Vec<u8>> for ElfEmitter {
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Vec<u8> {
         let mut result = vec![];
-        result.extend_from_slice(&[Mov32rr::build(Register::Ebp, Register::Esp)].concat());
-
+        result.extend(Mov32rr::build(Register::Ebp, Register::Esp));
         result.extend(statement_list.0.iter().fold(vec![], |mut result, stmt| {
             result.extend(self.visit_statement(stmt));
             result
@@ -145,17 +181,35 @@ impl Visitor<Vec<u8>> for ElfEmitter {
 
     fn visit_statement(&mut self, statement: &ast::Statement) -> Vec<u8> {
         match statement {
-            ast::Statement::Expression(expr) => match expr {
-                ast::Expression::Call(id, expr) => self.visit_call(id, expr),
-
+            ast::Statement::Expression(expr) => self.visit_expression(expr),
+            ast::Statement::Assignment(Assignment(id, expr, AssignmentType::Let)) => match expr {
+                ast::Expression::Literal(ast::Literal::String(s)) => {
+                    let pushes: Vec<_> =
+                        s.as_bytes()
+                            .chunks(4)
+                            .rev()
+                            .fold(vec![], |mut acc, substr| {
+                                let mut value: i32 = 0;
+                                for (i, c) in substr.iter().enumerate() {
+                                    value += (*c as i32) << (8 * i)
+                                }
+                                acc.extend(Push32::build(value));
+                                acc
+                            });
+                    pushes
+                }
                 _ => vec![],
             },
-            ast::Statement::Assignment(_) => vec![],
+            ast::Statement::Assignment(Assignment(_, _, AssignmentType::Const)) => vec![],
         }
     }
 
     fn visit_expression(&mut self, expr: &ast::Expression) -> Vec<u8> {
-        todo!()
+        match expr {
+            ast::Expression::Call(id, expr) => self.visit_call(id, expr),
+
+            _ => vec![],
+        }
     }
 
     fn visit_literal(&mut self, literal: &ast::Literal) -> Vec<u8> {

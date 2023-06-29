@@ -8,7 +8,7 @@ pub enum Statement {
     Assignment(Assignment),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignmentType {
     Let,
     Const,
