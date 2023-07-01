@@ -19,15 +19,20 @@ _start:
     push 'orld'
     push 'o, w'
     push 'Hell'
-    mov ecx, ebp
-    sub ecx, 14
 
+    push eax
+    mov eax, ebp
+    sub eax, 14
 
+    mov ecx, eax
     mov edx, 14 ;message length
     ; mov ecx,msg ;message to write
     mov ebx,1   ;file descriptor (stdout)
+    pop eax
+
     mov eax,4   ;system call number (sys_write)
     int 0x80    ;call kernel
+
 
 ; Exit via the kernel:
 

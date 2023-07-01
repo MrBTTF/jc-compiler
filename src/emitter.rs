@@ -1,6 +1,4 @@
-use std::{collections::HashMap, fs, io::Write};
-
-use crate::emitter::stdlib::print_let;
+use std::{collections::HashMap, fs, io::Write, mem};
 
 use self::{
     amd64::*,
@@ -9,6 +7,7 @@ use self::{
     stdlib::print,
 };
 
+mod abi;
 mod amd64;
 pub mod ast;
 pub mod elf;
@@ -17,8 +16,13 @@ pub mod stdlib;
 pub fn build_elf(ast: &ast::StatementList) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_statement_list(ast);
+
+    let entry_point: u32 = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
+        .try_into()
+        .unwrap();
     let mut elf_emitter = ElfEmitter {
         literals: data_builder.literals.clone(),
+        entry_point: VIRTUAL_ADDRESS_START + entry_point,
     };
     let text_header = &elf_emitter.visit_statement_list(ast);
 
@@ -68,7 +72,9 @@ impl Data {
 #[derive(Default)]
 pub struct DataBuilder {
     literals: HashMap<ast::Ident, Data>,
-    length: u32,
+    data_section: Vec<usize>,
+    stack: Vec<usize>,
+    // length: u32,
 }
 
 impl DataBuilder {
@@ -84,36 +90,56 @@ impl DataBuilder {
             ast::Statement::Expression(_) => (),
             ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
+                    // let data_loc = match assign_type {
+                    //     AssignmentType::Let => {
+                    //         self.literals.iter().fold(0_u32, |acc, (id, data)| {
+                    //             let mut size = if data.assign_type == AssignmentType::Let {
+                    //                 (match &data.lit {
+                    //                     ast::Literal::Ident(_) => 0,
+                    //                     ast::Literal::String(s) => s.len(),
+                    //                     ast::Literal::Number(_) => 0,
+                    //                 }) as u32
+                    //             } else {
+                    //                 return acc;
+                    //             };
+                    //             // dbg!(lit);
+                    //             // dbg!(size);
+                    //             size += 4 - (size % 4);
+                    //             // dbg!(size);
+                    //             acc + size
+                    //         })
+                    //     }
+                    //     AssignmentType::Const => self.length,
+                    // };
+
                     let data_loc = match assign_type {
-                        AssignmentType::Let => {
-                            self.literals.iter().fold(0_u32, |acc, (id, data)| {
-                                let mut size = if data.assign_type == AssignmentType::Let {
-                                    (match &data.lit {
-                                        ast::Literal::Ident(_) => 0,
-                                        ast::Literal::String(s) => s.len(),
-                                        ast::Literal::Number(_) => 0,
-                                    }) as u32
-                                } else {
-                                    return acc;
-                                };
-                                dbg!(lit);
-                                dbg!(size);
-                                size += 4 - (size % 4);
-                                dbg!(size);
-                                acc + size
-                            })
-                        }
-                        AssignmentType::Const => self.length,
+                        AssignmentType::Let => match lit.clone() {
+                            ast::Literal::String(s) => {
+                                let mut data_size = s.len();
+                                data_size += 4 - (data_size % 4);
+                                self.stack.push(data_size);
+                                self.stack.iter().sum()
+                            }
+                            _ => 0,
+                        },
+                        AssignmentType::Const => match lit.clone() {
+                            ast::Literal::String(s) => {
+                                let data_loc = self.data_section.iter().sum();
+                                self.data_section.push(s.len());
+                                data_loc
+                            }
+                            _ => 0,
+                        },
                     };
 
                     self.literals.insert(
                         id.clone(),
                         Data::new(lit.clone(), data_loc as u32, *assign_type),
                     );
-                    self.length += match lit.clone() {
-                        ast::Literal::String(string) => string.len(),
-                        _ => 0,
-                    } as u32;
+                    // self.length += match lit.clone() {
+                    //     ast::Literal::String(string) => string.len(),
+                    //     _ => 0,
+                    // } as u32;
                 }
                 _ => (),
             },
@@ -125,6 +151,7 @@ impl DataBuilder {
 
 pub struct ElfEmitter {
     literals: HashMap<ast::Ident, Data>,
+    entry_point: u32,
 }
 
 impl ElfEmitter {
@@ -141,19 +168,17 @@ impl ElfEmitter {
             _ => todo!(),
         };
 
-        if let ast::Literal::String(string) = lit {
-            match assign_type {
-                AssignmentType::Let => {
-                    if id.value == "print" {
-                        return print_let(*data_loc, string.len());
-                    }
-                }
-                AssignmentType::Const => {
-                    if id.value == "print" {
-                        return print(*data_loc, string.len());
-                    }
-                }
-            };
+        if id.value == "print" {
+            let args = &[match assign_type {
+                AssignmentType::Let => abi::Arg::Stack(*data_loc as i32),
+                AssignmentType::Const => abi::Arg::Data((self.entry_point + *data_loc) as i32),
+            }];
+            return [
+                abi::push_args(args),
+                print(lit.len()),
+                abi::pop_args(args.len()),
+            ]
+            .concat();
         }
 
         panic!("no such function {}", id.value)

@@ -113,3 +113,37 @@ impl Push32 {
 }
 
 impl Sliceable for Push32 {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Push32rr {
+    opcode: u8,
+}
+
+impl Push32rr {
+    pub fn build(reg: Register) -> Vec<u8> {
+        Self {
+            opcode: 0x50 + reg as u8,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Push32rr {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Pop32rr {
+    opcode: u8,
+}
+
+impl Pop32rr {
+    pub fn build(reg: Register) -> Vec<u8> {
+        Self {
+            opcode: 0x58 + reg as u8,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Pop32rr {}

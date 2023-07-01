@@ -53,6 +53,16 @@ pub enum Literal {
     Number(Number),
 }
 
+impl Literal {
+    pub fn len(&self) -> usize{
+        match self {
+            Literal::Ident(id) => id.value.len(),
+            Literal::String(s) => s.len(),
+            Literal::Number(n) => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct Ident {
     pub value: String,
