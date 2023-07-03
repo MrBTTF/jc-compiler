@@ -1,12 +1,12 @@
 use std::{collections::HashMap, ffi::CString, mem};
 
-use crate::emitter::{self, amd64::*, ast};
+use crate::emitter::{self, ast};
 
 use super::defs;
 
-pub const VIRTUAL_ADDRESS_START: u32 = 0x08000000;
-pub const SEGMENT_OFFSET: u32 = 0x1000;
-const ENTRY_POINT: u32 = VIRTUAL_ADDRESS_START + SEGMENT_OFFSET;
+pub type DWord = u64;
+
+pub const VIRTUAL_ADDRESS_START: DWord = 0x08000000;
 
 pub trait Sliceable: Sized {
     fn as_slice(&self) -> &[u8] {
@@ -33,9 +33,9 @@ pub struct ELFHeader {
     e_type: u16,
     e_machine: u16,
     e_version: u32,
-    e_entry: u32,
-    e_phoff: u32,
-    e_shoff: u32,
+    e_entry: DWord,
+    e_phoff: DWord,
+    e_shoff: DWord,
     e_flags: u32,
     e_ehsize: u16,
     e_phentsize: u16,
@@ -58,13 +58,13 @@ impl Sliceable for RelocationTable {}
 #[repr(C)]
 pub struct ProgramHeader {
     p_type: u32,
-    p_offset: u32,
-    p_vaddr: u32,
-    p_paddr: u32,
-    p_filesz: u32,
-    p_memsz: u32,
     p_flags: u32,
-    p_align: u32,
+    p_offset: DWord,
+    p_vaddr: DWord,
+    p_paddr: DWord,
+    p_filesz: DWord,
+    p_memsz: DWord,
+    p_align: DWord,
 }
 
 impl Sliceable for ProgramHeader {}
@@ -73,14 +73,14 @@ impl Sliceable for ProgramHeader {}
 pub struct SectionHeader {
     sh_name: u32,
     sh_type: u32,
-    sh_flags: u32,
-    sh_addr: u32,
-    sh_offset: u32,
-    sh_size: u32,
+    sh_flags: DWord,
+    sh_addr: DWord,
+    sh_offset: DWord,
+    sh_size: DWord,
     sh_link: u32,
     sh_info: u32,
-    sh_addralign: u32,
-    sh_entsize: u32,
+    sh_addralign: DWord,
+    sh_entsize: DWord,
 }
 
 impl Sliceable for SectionHeader {}
@@ -99,26 +99,27 @@ impl Sliceable for SymbolTable {}
 
 pub fn build_header(data_section_size: usize, section_entry: usize) -> ELFHeader {
     let e_ehsize = mem::size_of::<ELFHeader>().try_into().unwrap();
-    let e_phoff = e_ehsize as u32;
+    let e_phoff = e_ehsize as DWord;
+    let e_shoff = e_phoff + section_entry as DWord;
     let e_phentsize = mem::size_of::<ProgramHeader>().try_into().unwrap();
     let e_phnum = 3;
     let e_shentsize = mem::size_of::<SectionHeader>().try_into().unwrap();
     ELFHeader {
         e_ident_magic_number: defs::ELF_MAGIC,
-        e_ident_class: defs::ELF_CLASS_32_BIT,
+        e_ident_class: defs::ELF_CLASS_64_BIT,
         e_ident_data: defs::ELF_DATA_LITTLE_ENDIAN,
         e_ident_version: defs::ELF_VERSION_CURRENT,
         e_ident_abi: defs::ELF_OSABI_SYSTEM_V,
         e_ident_abi_version: defs::ELF_ABI_VERSION_NONE,
         e_ident_pad: [0; 7],
         e_type: defs::ELF_TYPE_EXEC,
-        e_machine: defs::ELF_MACHINE_386,
+        e_machine: defs::ELF_MACHINE_X86_64,
         e_version: defs::ELF_VERSION_CURRENT as u32,
         e_entry: VIRTUAL_ADDRESS_START
-            + (e_ehsize + e_phentsize * e_phnum) as u32
-            + data_section_size as u32,
+            + (e_ehsize + e_phentsize * e_phnum) as DWord
+            + data_section_size as DWord,
         e_phoff,
-        e_shoff: e_ehsize as u32 + section_entry as u32,
+        e_shoff,
         e_flags: 0x0,
         e_ehsize,
         e_phentsize,
@@ -143,18 +144,18 @@ pub fn build_program_headers(text_section_size: usize, data_section_size: usize)
         p_flags: defs::PROGRAM_HEADER_READ,
         p_align: 1,
     };
-    let data_p_filesz = data_section_size as u32;
+    let data_p_filesz = data_section_size as DWord;
     let data_program_header = ProgramHeader {
         p_type: defs::PROGRAM_TYPE_LOAD,
+        p_flags: defs::PROGRAM_HEADER_READ | defs::PROGRAM_HEADER_WRITE,
         p_offset: null_p_filesz,
         p_vaddr: VIRTUAL_ADDRESS_START + null_p_filesz,
         p_paddr: VIRTUAL_ADDRESS_START + null_p_filesz,
         p_filesz: data_p_filesz,
         p_memsz: data_p_filesz,
-        p_flags: defs::PROGRAM_HEADER_READ | defs::PROGRAM_HEADER_WRITE,
         p_align: 1,
     };
-    let text_p_filesz = text_section_size as u32;
+    let text_p_filesz = text_section_size as DWord;
     let text_program_header = ProgramHeader {
         p_type: defs::PROGRAM_TYPE_LOAD,
         p_offset: data_program_header.p_offset + data_p_filesz,
@@ -178,7 +179,7 @@ pub fn build_section_headers(
     data_section_size: usize,
     shstrtab_section_size: usize,
 ) -> Vec<u8> {
-    let data_entry: u32 = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
+    let data_entry: DWord = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
         .try_into()
         .unwrap();
     let null_section_header = SectionHeader {
@@ -199,7 +200,7 @@ pub fn build_section_headers(
         sh_flags: defs::SEGMENT_FLAGS_WRITE | defs::SEGMENT_FLAGS_ALLOC,
         sh_addr: VIRTUAL_ADDRESS_START + data_entry,
         sh_offset: data_entry,
-        sh_size: data_section_size as u32,
+        sh_size: data_section_size as DWord,
         sh_link: 0x0,
         sh_info: 0x0,
         sh_addralign: 0x0,
@@ -211,7 +212,7 @@ pub fn build_section_headers(
         sh_flags: defs::SEGMENT_FLAGS_ALLOC | defs::SEGMENT_FLAGS_EXECINSTR,
         sh_addr: data_section_header.sh_addr + data_section_header.sh_size,
         sh_offset: data_entry + data_section_header.sh_size,
-        sh_size: text_section_size as u32,
+        sh_size: text_section_size as DWord,
         sh_link: 0x0,
         sh_info: 0x0,
         sh_addralign: 0x0,
@@ -223,7 +224,7 @@ pub fn build_section_headers(
         sh_flags: defs::SEGMENT_FLAGS_NONE,
         sh_addr: text_section_header.sh_addr + text_section_header.sh_size,
         sh_offset: text_section_header.sh_offset + text_section_header.sh_size,
-        sh_size: shstrtab_section_size as u32,
+        sh_size: shstrtab_section_size as DWord,
         sh_link: 0x0,
         sh_info: 0x0,
         sh_addralign: 0x0,
@@ -283,24 +284,24 @@ pub fn build_rel_text_section_header() -> SectionHeader {
     }
 }
 
-#[rustfmt::skip]
-pub fn build_text_section() -> Vec<u8> {
-    let entry_point: u32 = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
-        .try_into()
-        .unwrap();
+// #[rustfmt::skip]
+// pub fn build_text_section() -> Vec<u8> {
+//     let entry_point: DWord = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
+//         .try_into()
+//         .unwrap();
     
-    let data_loc =VIRTUAL_ADDRESS_START + entry_point;
-   [
-        Mov32::build(Register::Edx, 0xe),
-        Mov32::build(Register::Ecx, data_loc as i32),
-        Mov32::build(Register::Ebx, 0x1),
-        Mov32::build(Register::Eax, 0x4),
-        SysCall::build(),
-        Mov32::build(Register::Ebx, 0x0),
-        Mov32::build(Register::Eax, 0x1),
-        SysCall::build(),
-    ].concat()
-}
+//     let data_loc =VIRTUAL_ADDRESS_START + entry_point;
+//    [
+//         Mov32::build(Register::Dx, 0xe),
+//         Mov32::build(Register::Cx, data_loc as i32),
+//         Mov32::build(Register::Bx, 0x1),
+//         Mov32::build(Register::Ax, 0x4),
+//         SysCall::build(),
+//         Mov32::build(Register::Bx, 0x0),
+//         Mov32::build(Register::Ax, 0x1),
+//         SysCall::build(),
+//     ].concat()
+// }
 
 pub fn build_data_section(literals: HashMap<ast::Ident, emitter::Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals

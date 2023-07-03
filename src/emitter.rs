@@ -17,13 +17,8 @@ pub fn build_elf(ast: &ast::StatementList) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_statement_list(ast);
 
-    let entry_point: u32 = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
-        .try_into()
-        .unwrap();
-    let mut elf_emitter = ElfEmitter {
-        literals: data_builder.literals.clone(),
-        entry_point: VIRTUAL_ADDRESS_START + entry_point,
-    };
+    let mut elf_emitter = ElfEmitter::new(&data_builder);
+
     let text_header = &elf_emitter.visit_statement_list(ast);
 
     let data_header = &build_data_section(data_builder.literals.clone());
@@ -56,11 +51,11 @@ pub fn build_elf(ast: &ast::StatementList) {
 #[derive(Clone)]
 pub struct Data {
     pub lit: ast::Literal,
-    pub data_loc: u32,
+    pub data_loc: DWord,
     pub assign_type: ast::AssignmentType,
 }
 impl Data {
-    fn new(lit: ast::Literal, data_loc: u32, assign_type: ast::AssignmentType) -> Data {
+    fn new(lit: ast::Literal, data_loc: DWord, assign_type: ast::AssignmentType) -> Data {
         Data {
             lit,
             data_loc,
@@ -90,28 +85,6 @@ impl DataBuilder {
             ast::Statement::Expression(_) => (),
             ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
-                    // let data_loc = match assign_type {
-                    //     AssignmentType::Let => {
-                    //         self.literals.iter().fold(0_u32, |acc, (id, data)| {
-                    //             let mut size = if data.assign_type == AssignmentType::Let {
-                    //                 (match &data.lit {
-                    //                     ast::Literal::Ident(_) => 0,
-                    //                     ast::Literal::String(s) => s.len(),
-                    //                     ast::Literal::Number(_) => 0,
-                    //                 }) as u32
-                    //             } else {
-                    //                 return acc;
-                    //             };
-                    //             // dbg!(lit);
-                    //             // dbg!(size);
-                    //             size += 4 - (size % 4);
-                    //             // dbg!(size);
-                    //             acc + size
-                    //         })
-                    //     }
-                    //     AssignmentType::Const => self.length,
-                    // };
-
                     let data_loc = match assign_type {
                         AssignmentType::Let => match lit.clone() {
                             ast::Literal::String(s) => {
@@ -134,12 +107,8 @@ impl DataBuilder {
 
                     self.literals.insert(
                         id.clone(),
-                        Data::new(lit.clone(), data_loc as u32, *assign_type),
+                        Data::new(lit.clone(), data_loc as DWord, *assign_type),
                     );
-                    // self.length += match lit.clone() {
-                    //     ast::Literal::String(string) => string.len(),
-                    //     _ => 0,
-                    // } as u32;
                 }
                 _ => (),
             },
@@ -151,10 +120,21 @@ impl DataBuilder {
 
 pub struct ElfEmitter {
     literals: HashMap<ast::Ident, Data>,
-    entry_point: u32,
+    entry_point: DWord,
 }
 
 impl ElfEmitter {
+    fn new(data_builder: &DataBuilder) -> Self {
+        let entry_point: DWord = (mem::size_of::<ELFHeader>()
+            + mem::size_of::<ProgramHeader>() * 3)
+            .try_into()
+            .unwrap();
+        ElfEmitter {
+            literals: data_builder.literals.clone(),
+            entry_point: VIRTUAL_ADDRESS_START + entry_point,
+        }
+    }
+
     fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
         let Data {
             lit,
@@ -170,8 +150,8 @@ impl ElfEmitter {
 
         if id.value == "print" {
             let args = &[match assign_type {
-                AssignmentType::Let => abi::Arg::Stack(*data_loc as i32),
-                AssignmentType::Const => abi::Arg::Data((self.entry_point + *data_loc) as i32),
+                AssignmentType::Let => abi::Arg::Stack(*data_loc as i64),
+                AssignmentType::Const => abi::Arg::Data((self.entry_point + *data_loc) as i64),
             }];
             return [
                 abi::push_args(args),
@@ -188,19 +168,12 @@ impl ElfEmitter {
 impl Visitor<Vec<u8>> for ElfEmitter {
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Vec<u8> {
         let mut result = vec![];
-        result.extend(Mov32rr::build(Register::Ebp, Register::Esp));
+        result.extend(Mov64rr::build(Register::Bp, Register::Sp));
         result.extend(statement_list.0.iter().fold(vec![], |mut result, stmt| {
             result.extend(self.visit_statement(stmt));
             result
         }));
-        result.extend_from_slice(
-            &[
-                Mov32::build(Register::Ebx, 0x0),
-                Mov32::build(Register::Eax, 0x1),
-                SysCall::build(),
-            ]
-            .concat(),
-        );
+        result.extend_from_slice(&stdlib::exit(0));
         result
     }
 
@@ -211,14 +184,15 @@ impl Visitor<Vec<u8>> for ElfEmitter {
                 ast::Expression::Literal(ast::Literal::String(s)) => {
                     let pushes: Vec<_> =
                         s.as_bytes()
-                            .chunks(4)
+                            .chunks(8)
                             .rev()
                             .fold(vec![], |mut acc, substr| {
-                                let mut value: i32 = 0;
+                                let mut value: u64 = 0;
                                 for (i, c) in substr.iter().enumerate() {
-                                    value += (*c as i32) << (8 * i)
+                                    value += (*c as u64) << (8 * i)
                                 }
-                                acc.extend(Push32::build(value));
+                                acc.extend(Mov64::build(Register::Ax, value as i64));
+                                acc.extend(Push::build(Register::Ax));
                                 acc
                             });
                     pushes

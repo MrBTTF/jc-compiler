@@ -14,28 +14,34 @@ section .text
 _start:
 
 ; Write the string to stdout:
-    mov ebp, esp
-    push word '!' | 0xa  << 8
-    push 'orld'
-    push 'o, w'
-    push 'Hell'
+    mov rbp, rsp
 
-    push eax
-    mov eax, ebp
-    sub eax, 14
+    ; push rax
+    mov rbx, 0xa
+    shl rbx, 40
+    mov rax, 'orld!'
+    or rax, rbx
+    push rax
+    mov rax,  'Hello, w' 
+    push rax
+    ; pop rax
 
-    mov ecx, eax
+    ; push rax
+    mov rax, rbp
+    sub rax, 16
+
+    mov rsi, rax ;message to write
     mov edx, 14 ;message length
     ; mov ecx,msg ;message to write
-    mov ebx,1   ;file descriptor (stdout)
-    pop eax
+    mov edi,1   ;file descriptor (stdout)
+    pop rax
 
-    mov eax,4   ;system call number (sys_write)
-    int 0x80    ;call kernel
+    mov eax,1   ;system call number (sys_exit)
+    syscall    ;call kernel
 
 
 ; Exit via the kernel:
 
-    mov ebx,0   ;process' exit code
-    mov eax,1   ;system call number (sys_exit)
-    int 0x80    ;call kernel - this interrupt won't return
+    mov edi,0   ;process' exit code
+    mov eax, 60   ;system call number (sys_exit)
+    syscall    ;call kernel - this interrupt won't return
