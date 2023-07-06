@@ -38,7 +38,7 @@ pub struct Mov32 {
 
 impl Mov32 {
     pub fn build(reg: Register, value: i32) -> Vec<u8> {
-        Mov32 {
+        Self {
             opcode: 0xb8 + reg as u8,
             value,
         }
@@ -57,7 +57,7 @@ pub struct Mov32rr {
 
 impl Mov32rr {
     pub fn build(dst: Register, src: Register) -> Vec<u8> {
-        Mov32rr {
+        Self {
             opcode: 0x89,
             mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
         }
@@ -77,7 +77,7 @@ pub struct Sub32 {
 
 impl Sub32 {
     pub fn build(reg: Register, value: i32) -> Vec<u8> {
-        Sub32 {
+        Self {
             opcode: 0x81,
             mod_rm: 3 << 6 | 5 << 3 | (reg as u8),
             value,
@@ -87,6 +87,105 @@ impl Sub32 {
 }
 
 impl Sliceable for Sub32 {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Add32 {
+    opcode: u8,
+    mod_rm: u8,
+    value: i32,
+}
+
+impl Add32 {
+    pub fn build(reg: Register, value: i32) -> Vec<u8> {
+        Self {
+            opcode: 0x81,
+            mod_rm: 3 << 6 | (reg as u8),
+            value,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Add32 {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Shl32 {
+    opcode: u8,
+    mod_rm: u8,
+    value: u8,
+}
+
+impl Shl32 {
+    pub fn build(reg: Register, value: u8) -> Vec<u8> {
+        Self {
+            opcode: 0xc1,
+            mod_rm: 3 << 6 | 4 << 3 | (reg as u8),
+            value,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Shl32 {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Xor32rr {
+    opcode: u8,
+    mod_rm: u8,
+}
+
+impl Xor32rr {
+    pub fn build(dst: Register, src: Register) -> Vec<u8> {
+        Self {
+            opcode: 0x31,
+            mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Xor32rr {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Div32 {
+    opcode: u8,
+    mod_rm: u8,
+}
+
+impl Div32 {
+    pub fn build(divider: Register) -> Vec<u8> {
+        Self {
+            opcode: 0xf7,
+            mod_rm: 3 << 6 | 6 << 3 | divider as u8,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Div32 {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Or32rr {
+    opcode: u8,
+    mod_rm: u8,
+}
+
+impl Or32rr {
+    pub fn build(dst: Register, src: Register) -> Vec<u8> {
+        Self {
+            opcode: 0x9,
+            mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Or32rr {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -219,3 +318,47 @@ impl Sub64 {
 }
 
 impl Sliceable for Sub64 {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Mov64Ref {
+    rex: u8,
+    opcode: u8,
+    mod_rm: u8,
+    offset: i8,
+}
+
+impl Mov64Ref {
+    pub fn build(dst: Register, src: Register, offset: i8) -> Vec<u8> {
+        Self {
+            rex: 0x48,
+            opcode: 0x8b,
+            mod_rm: 1 << 6 | (src as u8) << 3 | (dst as u8),
+            offset,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Mov64Ref {}
+
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Div64 {
+    rex: u8,
+    opcode: u8,
+    mod_rm: u8,
+}
+
+impl Div64 {
+    pub fn build(divider: Register) -> Vec<u8> {
+        Self {
+            rex: 0x48,
+            opcode: 0xf7,
+            mod_rm: 3 << 6 | 6 << 3 | divider as u8,
+        }
+        .as_vec()
+    }
+}
+
+impl Sliceable for Div64 {}

@@ -79,7 +79,7 @@ fn ident(ident: &str) -> ast::Ident {
     }
 }
 
-fn number(number: &i128) -> ast::Number {
+fn number(number: &i64) -> ast::Number {
     ast::Number {
         value: number.to_owned(),
     }

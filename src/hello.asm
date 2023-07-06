@@ -15,6 +15,9 @@ _start:
 
 ; Write the string to stdout:
     mov rbp, rsp
+        
+    mov rax, 123
+    push rax
 
     ; push rax
     mov rbx, 0xa
@@ -22,16 +25,41 @@ _start:
     mov rax, 'orld!'
     or rax, rbx
     push rax
+
+    mov rax, [rbp-8]
+    mov rcx, 10
+    xor ebx, ebx
+
+    xor edx, edx
+    div rcx
+    add edx, '0'
+    shl ebx, 0
+    or ebx, edx
+
+    xor edx, edx
+    div ecx
+    add edx, '0'
+    shl ebx, 8
+    or ebx, edx
+
+    xor edx, edx
+    div ecx
+    add edx, '0'
+    shl ebx, 16
+    or ebx, edx
+    
+    push rbx
+
     mov rax,  'Hello, w' 
     push rax
     ; pop rax
 
     ; push rax
     mov rax, rbp
-    sub rax, 16
+    sub rax, 32
 
     mov rsi, rax ;message to write
-    mov edx, 14 ;message length
+    mov edx, 21 ;message length
     ; mov ecx,msg ;message to write
     mov edi,1   ;file descriptor (stdout)
     pop rax

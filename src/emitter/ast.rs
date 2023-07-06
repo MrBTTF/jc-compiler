@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    mem::{self, size_of},
+};
 
 pub struct StatementList(pub Vec<Statement>);
 
@@ -54,11 +57,11 @@ pub enum Literal {
 }
 
 impl Literal {
-    pub fn len(&self) -> usize{
+    pub fn len(&self) -> usize {
         match self {
             Literal::Ident(id) => id.value.len(),
             Literal::String(s) => s.len(),
-            Literal::Number(n) => todo!(),
+            Literal::Number(n) => mem::size_of_val(&n.value),
         }
     }
 }
@@ -70,7 +73,7 @@ pub struct Ident {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Number {
-    pub value: i128,
+    pub value: i64,
 }
 
 pub trait Visitor<T> {

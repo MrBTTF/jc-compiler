@@ -284,29 +284,10 @@ pub fn build_rel_text_section_header() -> SectionHeader {
     }
 }
 
-// #[rustfmt::skip]
-// pub fn build_text_section() -> Vec<u8> {
-//     let entry_point: DWord = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
-//         .try_into()
-//         .unwrap();
-    
-//     let data_loc =VIRTUAL_ADDRESS_START + entry_point;
-//    [
-//         Mov32::build(Register::Dx, 0xe),
-//         Mov32::build(Register::Cx, data_loc as i32),
-//         Mov32::build(Register::Bx, 0x1),
-//         Mov32::build(Register::Ax, 0x4),
-//         SysCall::build(),
-//         Mov32::build(Register::Bx, 0x0),
-//         Mov32::build(Register::Ax, 0x1),
-//         SysCall::build(),
-//     ].concat()
-// }
-
 pub fn build_data_section(literals: HashMap<ast::Ident, emitter::Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
-        .map(
+        .filter_map(
             |(
                 id,
                 emitter::Data {
@@ -314,7 +295,12 @@ pub fn build_data_section(literals: HashMap<ast::Ident, emitter::Data>) -> Vec<u
                     data_loc,
                     assign_type,
                 },
-            )| (*data_loc, id.clone(), lit.clone()),
+            )| {
+                match assign_type {
+                    ast::AssignmentType::Let => None,
+                    ast::AssignmentType::Const => Some((*data_loc, id.clone(), lit.clone())),
+                }
+            },
         )
         .collect();
     literals.sort_by_key(|(data_loc, _, _)| *data_loc);
@@ -323,6 +309,10 @@ pub fn build_data_section(literals: HashMap<ast::Ident, emitter::Data>) -> Vec<u
         .fold(vec![], |mut acc, (_, _, lit)| match lit {
             ast::Literal::String(string) => {
                 acc.extend(CString::new(string.clone()).unwrap().into_bytes());
+                acc
+            }
+            ast::Literal::Number(n) => {
+                acc.extend(n.value.to_le_bytes().to_vec());
                 acc
             }
             _ => todo!(),

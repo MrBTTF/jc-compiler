@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fs, io::Write, mem};
 
+use crate::emitter::stdlib::printd;
+
 use self::{
     amd64::*,
     ast::{Assignment, AssignmentType, Visitor},
@@ -22,7 +24,7 @@ pub fn build_elf(ast: &ast::StatementList) {
     let text_header = &elf_emitter.visit_statement_list(ast);
 
     let data_header = &build_data_section(data_builder.literals.clone());
-    // let text_header = &build_text_section();
+    // dbg!(data_builder.literals.clone());
     let shstrtab_header = &build_shstrtab_section();
     let program_headers = &build_program_headers(text_header.len(), data_header.len());
     let header = &build_header(
@@ -48,7 +50,7 @@ pub fn build_elf(ast: &ast::StatementList) {
     .unwrap();
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Data {
     pub lit: ast::Literal,
     pub data_loc: DWord,
@@ -64,7 +66,7 @@ impl Data {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct DataBuilder {
     literals: HashMap<ast::Ident, Data>,
     data_section: Vec<usize>,
@@ -85,32 +87,28 @@ impl DataBuilder {
             ast::Statement::Expression(_) => (),
             ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
-                    let data_loc = match assign_type {
-                        AssignmentType::Let => match lit.clone() {
-                            ast::Literal::String(s) => {
-                                let mut data_size = s.len();
-                                data_size += 4 - (data_size % 4);
-                                self.stack.push(data_size);
-                                self.stack.iter().sum()
+                    let data_loc: usize = match assign_type {
+                        AssignmentType::Let => {
+                            let mut data_size = lit.len();
+                            let remainder = (data_size % 8);
+                            if remainder != 0 {
+                                data_size += 8 - remainder;
                             }
-                            _ => 0,
-                        },
-                        AssignmentType::Const => match lit.clone() {
-                            ast::Literal::String(s) => {
-                                let data_loc = self.data_section.iter().sum();
-                                self.data_section.push(s.len());
-                                data_loc
-                            }
-                            _ => 0,
-                        },
+                            self.stack.push(data_size);
+                            self.stack.iter().sum()
+                        }
+                        AssignmentType::Const => {
+                            let data_loc = self.data_section.iter().sum();
+                            self.data_section.push(lit.len());
+                            data_loc
+                        }
                     };
-
                     self.literals.insert(
                         id.clone(),
                         Data::new(lit.clone(), data_loc as DWord, *assign_type),
                     );
                 }
-                _ => (),
+                _ => todo!(),
             },
         }
     }
@@ -153,12 +151,12 @@ impl ElfEmitter {
                 AssignmentType::Let => abi::Arg::Stack(*data_loc as i64),
                 AssignmentType::Const => abi::Arg::Data((self.entry_point + *data_loc) as i64),
             }];
-            return [
-                abi::push_args(args),
-                print(lit.len()),
-                abi::pop_args(args.len()),
-            ]
-            .concat();
+            let print_call = match lit {
+                ast::Literal::Ident(_) => todo!(),
+                ast::Literal::String(_) => print(lit.len()),
+                ast::Literal::Number(_) => printd(),
+            };
+            return [abi::push_args(args), print_call, abi::pop_args(args.len())].concat();
         }
 
         panic!("no such function {}", id.value)
@@ -197,6 +195,11 @@ impl Visitor<Vec<u8>> for ElfEmitter {
                             });
                     pushes
                 }
+                ast::Expression::Literal(ast::Literal::Number(n)) => [
+                    Mov64::build(Register::Ax, n.value),
+                    Push::build(Register::Ax),
+                ]
+                .concat(),
                 _ => vec![],
             },
             ast::Statement::Assignment(Assignment(_, _, AssignmentType::Const)) => vec![],

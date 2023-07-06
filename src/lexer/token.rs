@@ -7,5 +7,5 @@ pub enum Token {
     RightP,
     Whitespace,
     Ident(String),
-    Number(i128),
+    Number(i64),
 }
