@@ -1,10 +1,11 @@
-use std::{collections::HashMap, fs, io::Write, mem};
+use std::{collections::HashMap, fs, io::Write};
 
 use crate::emitter::stdlib::printd;
 
 use self::{
     amd64::*,
-    ast::{Assignment, AssignmentType, Visitor},
+    ast::{Assignment, AssignmentType},
+    data::*,
     elf::structs::*,
     stdlib::print,
 };
@@ -12,6 +13,7 @@ use self::{
 mod abi;
 mod amd64;
 pub mod ast;
+mod data;
 pub mod elf;
 pub mod stdlib;
 
@@ -23,8 +25,7 @@ pub fn build_elf(ast: &ast::StatementList) {
 
     let text_header = &elf_emitter.visit_statement_list(ast);
 
-    let data_header = &build_data_section(data_builder.literals.clone());
-    // dbg!(data_builder.literals.clone());
+    let data_header = &build_data_section(data_builder.variables.clone());
     let shstrtab_header = &build_shstrtab_section();
     let program_headers = &build_program_headers(text_header.len(), data_header.len());
     let header = &build_header(
@@ -50,78 +51,6 @@ pub fn build_elf(ast: &ast::StatementList) {
     .unwrap();
 }
 
-#[derive(Clone, Debug)]
-pub struct Data {
-    pub lit: ast::Literal,
-    data_loc: DWord,
-    pub assign_type: ast::AssignmentType,
-}
-impl Data {
-    fn new(lit: ast::Literal, data_loc: DWord, assign_type: ast::AssignmentType) -> Data {
-        Data {
-            lit,
-            data_loc,
-            assign_type,
-        }
-    }
-
-    fn data_loc(&self) -> u64 {
-        match self.assign_type {
-            AssignmentType::Let => self.data_loc,
-            AssignmentType::Const => DATA_SECTION_ADDRESS_START + self.data_loc,
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct DataBuilder {
-    literals: HashMap<ast::Ident, Data>,
-    data_section: Vec<usize>,
-    stack: Vec<usize>,
-}
-
-impl DataBuilder {
-    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
-        statement_list
-            .0
-            .iter()
-            .for_each(|stmt| self.visit_statement(stmt));
-    }
-
-    fn visit_statement(&mut self, statement: &ast::Statement) {
-        match statement {
-            ast::Statement::Expression(_) => (),
-            ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
-                ast::Expression::Literal(lit) => {
-                    let data_loc: usize = match assign_type {
-                        AssignmentType::Let => {
-                            let mut data_size = lit.len();
-                            let remainder = data_size % 8;
-                            if remainder != 0 {
-                                data_size += 8 - remainder;
-                            }
-                            self.stack.push(data_size);
-                            self.stack.iter().sum()
-                        }
-                        AssignmentType::Const => {
-                            let data_loc = self.data_section.iter().sum();
-                            self.data_section.push(lit.len());
-                            data_loc
-                        }
-                    };
-                    self.literals.insert(
-                        id.clone(),
-                        Data::new(lit.clone(), data_loc as DWord, *assign_type),
-                    );
-                }
-                _ => todo!(),
-            },
-        }
-    }
-
-    fn visit_assignment(&mut self, statement: &ast::Statement) {}
-}
-
 pub struct ElfEmitter {
     literals: HashMap<ast::Ident, Data>,
 }
@@ -129,38 +58,10 @@ pub struct ElfEmitter {
 impl ElfEmitter {
     fn new(data_builder: &DataBuilder) -> Self {
         ElfEmitter {
-            literals: data_builder.literals.clone(),
+            literals: data_builder.variables.clone(),
         }
     }
 
-    fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
-        let data = match expr {
-            ast::Expression::Ident(id) => self
-                .literals
-                .get(id)
-                .unwrap_or_else(|| panic!("undefined variable: {}", id.value)),
-            _ => todo!(),
-        };
-
-        if id.value == "print" {
-            let args = &[match data.assign_type {
-                AssignmentType::Let => abi::Arg::Stack(data.data_loc() as i64),
-                AssignmentType::Const => {
-                    abi::Arg::Data(data.data_loc() as i64)
-                }
-            }];
-            let print_call = match data.lit {
-                ast::Literal::String(_) => print(data.lit.len()),
-                ast::Literal::Number(_) => printd(),
-            };
-            return [abi::push_args(args), print_call, abi::pop_args(args.len())].concat();
-        }
-
-        panic!("no such function {}", id.value)
-    }
-}
-
-impl Visitor<Vec<u8>> for ElfEmitter {
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Vec<u8> {
         let mut result = vec![];
         result.extend(Mov64rr::build(Register::Bp, Register::Sp));
@@ -175,7 +76,7 @@ impl Visitor<Vec<u8>> for ElfEmitter {
     fn visit_statement(&mut self, statement: &ast::Statement) -> Vec<u8> {
         match statement {
             ast::Statement::Expression(expr) => self.visit_expression(expr),
-            ast::Statement::Assignment(Assignment(id, expr, AssignmentType::Let)) => match expr {
+            ast::Statement::Assignment(Assignment(_, expr, AssignmentType::Let)) => match expr {
                 ast::Expression::Literal(ast::Literal::String(s)) => {
                     let pushes: Vec<_> =
                         s.as_bytes()
@@ -211,18 +112,42 @@ impl Visitor<Vec<u8>> for ElfEmitter {
         }
     }
 
-    fn visit_literal(&mut self, literal: &ast::Literal) -> Vec<u8> {
-        match literal {
-            ast::Literal::String(_) => todo!(),
-            ast::Literal::Number(_) => todo!(),
+    fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
+        let data = match expr {
+            ast::Expression::Ident(id) => self
+                .literals
+                .get(id)
+                .unwrap_or_else(|| panic!("undefined variable: {}", id.value)),
+            _ => todo!(),
+        };
+
+        if id.value == "print" {
+            let args = &[match data.assign_type {
+                AssignmentType::Let => abi::Arg::Stack(data.data_loc() as i64),
+                AssignmentType::Const => abi::Arg::Data(data.data_loc() as i64),
+            }];
+            let print_call = match data.lit {
+                ast::Literal::String(_) => print(data.lit.len()),
+                ast::Literal::Number(_) => printd(),
+            };
+            return [abi::push_args(args), print_call, abi::pop_args(args.len())].concat();
         }
+
+        panic!("no such function {}", id.value)
     }
 
-    fn visit_ident(&mut self, ident: &ast::Ident) -> Vec<u8> {
-        todo!()
-    }
+    // fn visit_literal(&mut self, literal: &ast::Literal) -> Vec<u8> {
+    //     match literal {
+    //         ast::Literal::String(_) => todo!(),
+    //         ast::Literal::Number(_) => todo!(),
+    //     }
+    // }
 
-    fn visit_number(&mut self, number: &ast::Number) -> Vec<u8> {
-        todo!()
-    }
+    // fn visit_ident(&mut self, ident: &ast::Ident) -> Vec<u8> {
+    //     todo!()
+    // }
+
+    // fn visit_number(&mut self, number: &ast::Number) -> Vec<u8> {
+    //     todo!()
+    // }
 }

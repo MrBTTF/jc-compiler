@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use super::token::Token;
 
 fn whitespace(s: &str) -> (Option<Token>, usize) {

@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    mem::{self, size_of},
-};
+use std::{fmt::Display, mem};
 
 pub struct StatementList(pub Vec<Statement>);
 

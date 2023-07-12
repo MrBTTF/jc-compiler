@@ -1,6 +1,4 @@
-use std::{collections::HashMap, ffi::CString, mem};
-
-use crate::emitter::{self, ast};
+use std::{ffi::CString, mem};
 
 use super::defs;
 
@@ -285,41 +283,6 @@ pub fn build_rel_text_section_header() -> SectionHeader {
         sh_addralign: 0x04,
         sh_entsize: 0x08,
     }
-}
-
-pub fn build_data_section(literals: HashMap<ast::Ident, emitter::Data>) -> Vec<u8> {
-    let mut literals: Vec<_> = literals
-        .iter()
-        .filter_map(
-            |(
-                id,
-                emitter::Data {
-                    lit,
-                    data_loc,
-                    assign_type,
-                },
-            )| {
-                match assign_type {
-                    ast::AssignmentType::Let => None,
-                    ast::AssignmentType::Const => Some((*data_loc, id.clone(), lit.clone())),
-                }
-            },
-        )
-        .collect();
-    literals.sort_by_key(|(data_loc, _, _)| *data_loc);
-    literals
-        .iter()
-        .fold(vec![], |mut acc, (_, _, lit)| match lit {
-            ast::Literal::String(string) => {
-                acc.extend(CString::new(string.clone()).unwrap().into_bytes());
-                acc
-            }
-            ast::Literal::Number(n) => {
-                acc.extend(n.value.to_le_bytes().to_vec());
-                acc
-            }
-            _ => todo!(),
-        })
 }
 
 #[rustfmt::skip]
