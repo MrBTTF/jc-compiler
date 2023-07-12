@@ -25,6 +25,7 @@ impl Visitor<String> for AstPrinter {
 
     fn visit_expression(&mut self, expression: &Expression) -> String {
         match expression {
+            Expression::Ident(ident) => self.visit_ident(ident),
             Expression::Literal(literal) => self.visit_literal(literal),
             Expression::Call(ident, expr) => {
                 let s1 = self.visit_ident(ident);
@@ -36,7 +37,6 @@ impl Visitor<String> for AstPrinter {
 
     fn visit_literal(&mut self, literal: &Literal) -> String {
         match literal {
-            Literal::Ident(ident) => self.visit_ident(ident),
             Literal::String(str) => format!("\"{str}\""),
             Literal::Number(number) => self.visit_number(number),
         }

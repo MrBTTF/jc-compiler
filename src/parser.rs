@@ -1,7 +1,7 @@
 pub mod ast_printer;
 
 use crate::{
-    emitter::ast::{self, AssignmentType, StatementList},
+    emitter::ast::{self, StatementList},
     lexer::token::Token,
 };
 
@@ -9,9 +9,9 @@ use crate::{
 statement_list := statement*
 statement := assignment | expression
 assignment := ("let" | "const") ident "=" expression
-expression := literal | call
+expression := literal | ident | call
 call := ident(expression)
-literal := ident | string | number
+literal := string | number
 string := . ident
  */
 
@@ -41,6 +41,8 @@ fn assignment(tokens: &[Token]) -> Option<ast::Assignment> {
 fn expression(tokens: &[Token]) -> Option<ast::Expression> {
     if let Some(literal) = literal(tokens) {
         return Some(ast::Expression::Literal(literal));
+    } else if let [Token::Ident(id)] = tokens {
+        return Some(ast::Expression::Ident(ident(id)));
     } else if let Some((id, expr)) = call(tokens) {
         return Some(ast::Expression::Call(id, Box::new(expr)));
     }
@@ -49,21 +51,8 @@ fn expression(tokens: &[Token]) -> Option<ast::Expression> {
 }
 
 fn literal(tokens: &[Token]) -> Option<ast::Literal> {
-    if tokens.first().is_some_and(|t| *t == Token::Dot) {
-        let s = tokens.iter().skip(1).fold(String::new(), |mut acc, t| {
-            if let Token::Ident(id) = t {
-                acc += id;
-            }
-            acc + " "
-        });
-        let s = &s[..s.len() - 1];
-        if s.is_empty() {
-            panic!("invalid literal: {:?}", &tokens);
-        }
-        return Some(ast::Literal::String(string(s)));
-    }
     match tokens {
-        [Token::Ident(id)] => Some(ast::Literal::Ident(ident(id))),
+        [Token::String(s)] => Some(ast::Literal::String(string(s))),
         [Token::Number(num)] => Some(ast::Literal::Number(number(num))),
         _ => None,
     }
@@ -86,7 +75,7 @@ fn number(number: &i64) -> ast::Number {
 }
 
 fn call(tokens: &[Token]) -> Option<(ast::Ident, ast::Expression)> {
-    let id = {
+    let id: ast::Ident = {
         let Token::Ident(id) = &tokens[0] else {
             return None;
         };

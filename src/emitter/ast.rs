@@ -45,13 +45,13 @@ pub struct Assignment(pub Ident, pub Expression, pub AssignmentType);
 
 #[derive(Debug)]
 pub enum Expression {
+    Ident(Ident),
     Literal(Literal),
     Call(Ident, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    Ident(Ident),
     String(String),
     Number(Number),
 }
@@ -59,7 +59,6 @@ pub enum Literal {
 impl Literal {
     pub fn len(&self) -> usize {
         match self {
-            Literal::Ident(id) => id.value.len(),
             Literal::String(s) => s.len(),
             Literal::Number(n) => mem::size_of_val(&n.value),
         }

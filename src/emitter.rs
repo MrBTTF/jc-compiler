@@ -135,7 +135,7 @@ impl ElfEmitter {
 
     fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
         let data = match expr {
-            ast::Expression::Literal(ast::Literal::Ident(id)) => self
+            ast::Expression::Ident(id) => self
                 .literals
                 .get(id)
                 .unwrap_or_else(|| panic!("undefined variable: {}", id.value)),
@@ -150,7 +150,6 @@ impl ElfEmitter {
                 }
             }];
             let print_call = match data.lit {
-                ast::Literal::Ident(_) => todo!(),
                 ast::Literal::String(_) => print(data.lit.len()),
                 ast::Literal::Number(_) => printd(),
             };
@@ -214,7 +213,6 @@ impl Visitor<Vec<u8>> for ElfEmitter {
 
     fn visit_literal(&mut self, literal: &ast::Literal) -> Vec<u8> {
         match literal {
-            ast::Literal::Ident(_) => todo!(),
             ast::Literal::String(_) => todo!(),
             ast::Literal::Number(_) => todo!(),
         }

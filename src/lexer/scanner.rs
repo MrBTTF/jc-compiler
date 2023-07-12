@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use super::token::Token;
 
 fn whitespace(s: &str) -> (Option<Token>, usize) {
-    let c = s.chars().nth(0).unwrap();
+    let c = s.chars().next().unwrap();
     if matches!(c, ' ' | '\t') {
         (Some(Token::Whitespace), 1)
     } else {
@@ -10,7 +12,7 @@ fn whitespace(s: &str) -> (Option<Token>, usize) {
 }
 
 fn newline(s: &str) -> (Option<Token>, usize) {
-    let c = s.chars().nth(0).unwrap();
+    let c = s.chars().next().unwrap();
     if c == '\n' {
         (Some(Token::Newline), 1)
     } else {
@@ -19,33 +21,28 @@ fn newline(s: &str) -> (Option<Token>, usize) {
 }
 
 fn operator(s: &str) -> (Option<Token>, usize) {
-    let c = s.chars().nth(0).unwrap();
+    let c = s.chars().next().unwrap();
     match c {
         '=' => (Some(Token::Equal), 1),
-        '.' => (Some(Token::Dot), 1),
         '(' => (Some(Token::LeftP), 1),
         ')' => (Some(Token::RightP), 1),
         _ => (None, 0),
     }
 }
 
-// fn string(s: &str) -> (Option<Token>, usize) {
-//     if !s.starts_with('.') {
-//         return (None, 0);
-//     }
-//     let mut i: usize = 0;
-//     for c in s.chars() {
-//         if !c.is_alphanumeric() && !matches!(c, '\\' | '_' | '!' | ' ') {
-//             break;
-//         }
-//         i += 1;
-//     }
-//     if i == 0 {
-//         return (None, 0);
-//     }
-//     let s = s[1..i].to_string().replace("\\n", "\n");
-//     (Some(Token::Ident(s)), i)
-// }
+const ESCAPE_CHARACTERS_MAP: [(&str, &str); 2] = [("\n", "\\n"), ("\t", "\\t")];
+
+fn string(s: &str) -> (Option<Token>, usize) {
+    if !s.starts_with('.') {
+        return (None, 0);
+    }
+    let i = s.len();
+    let mut s = s[1..].to_string();
+    for (c, escaped_c) in ESCAPE_CHARACTERS_MAP {
+        s = s.replace(escaped_c, c);
+    }
+    (Some(Token::String(s)), i)
+}
 
 fn number(s: &str) -> (Option<Token>, usize) {
     let mut i: usize = 0;
@@ -72,24 +69,23 @@ fn number(s: &str) -> (Option<Token>, usize) {
 }
 
 fn identifier(s: &str) -> (Option<Token>, usize) {
+    if !s.chars().next().unwrap().is_alphabetic() {
+        return (None, 0);
+    }
     let mut i: usize = 0;
     for c in s.chars() {
-        if !c.is_alphanumeric() && !matches!(c, '\\' | '_' | '!') {
+        if !c.is_alphanumeric() && !matches!(c, '_' | '!') {
             break;
         }
         i += 1;
     }
-    if i == 0 {
-        return (None, 0);
-    }
-    let s = s[..i].to_string().replace("\\n", "\n");
-    (Some(Token::Ident(s)), i)
+    (Some(Token::Ident(s[..i].to_string())), i)
 }
 
 type Parser = fn(&str) -> (Option<Token>, usize);
 
 fn scan_token(s: &str) -> (Option<Token>, usize) {
-    let parsers: Vec<Parser> = vec![newline, operator, number, identifier, whitespace];
+    let parsers: Vec<Parser> = vec![newline, operator, string, number, identifier, whitespace];
     for (i, parser) in parsers.iter().enumerate() {
         let (token, advanced) = parser(s);
         // dbg!(i, &token, advanced);
