@@ -53,7 +53,7 @@ pub fn build_elf(ast: &ast::StatementList) {
 #[derive(Clone, Debug)]
 pub struct Data {
     pub lit: ast::Literal,
-    pub data_loc: DWord,
+    data_loc: DWord,
     pub assign_type: ast::AssignmentType,
 }
 impl Data {
@@ -64,6 +64,13 @@ impl Data {
             assign_type,
         }
     }
+
+    fn data_loc(&self) -> u64 {
+        match self.assign_type {
+            AssignmentType::Let => self.data_loc,
+            AssignmentType::Const => DATA_SECTION_ADDRESS_START + self.data_loc,
+        }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -71,7 +78,6 @@ pub struct DataBuilder {
     literals: HashMap<ast::Ident, Data>,
     data_section: Vec<usize>,
     stack: Vec<usize>,
-    // length: u32,
 }
 
 impl DataBuilder {
@@ -90,7 +96,7 @@ impl DataBuilder {
                     let data_loc: usize = match assign_type {
                         AssignmentType::Let => {
                             let mut data_size = lit.len();
-                            let remainder = (data_size % 8);
+                            let remainder = data_size % 8;
                             if remainder != 0 {
                                 data_size += 8 - remainder;
                             }
@@ -118,27 +124,17 @@ impl DataBuilder {
 
 pub struct ElfEmitter {
     literals: HashMap<ast::Ident, Data>,
-    entry_point: DWord,
 }
 
 impl ElfEmitter {
     fn new(data_builder: &DataBuilder) -> Self {
-        let entry_point: DWord = (mem::size_of::<ELFHeader>()
-            + mem::size_of::<ProgramHeader>() * 3)
-            .try_into()
-            .unwrap();
         ElfEmitter {
             literals: data_builder.literals.clone(),
-            entry_point: VIRTUAL_ADDRESS_START + entry_point,
         }
     }
 
     fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
-        let Data {
-            lit,
-            data_loc,
-            assign_type,
-        } = match expr {
+        let data = match expr {
             ast::Expression::Literal(ast::Literal::Ident(id)) => self
                 .literals
                 .get(id)
@@ -147,13 +143,15 @@ impl ElfEmitter {
         };
 
         if id.value == "print" {
-            let args = &[match assign_type {
-                AssignmentType::Let => abi::Arg::Stack(*data_loc as i64),
-                AssignmentType::Const => abi::Arg::Data((self.entry_point + *data_loc) as i64),
+            let args = &[match data.assign_type {
+                AssignmentType::Let => abi::Arg::Stack(data.data_loc() as i64),
+                AssignmentType::Const => {
+                    abi::Arg::Data(data.data_loc() as i64)
+                }
             }];
-            let print_call = match lit {
+            let print_call = match data.lit {
                 ast::Literal::Ident(_) => todo!(),
-                ast::Literal::String(_) => print(lit.len()),
+                ast::Literal::String(_) => print(data.lit.len()),
                 ast::Literal::Number(_) => printd(),
             };
             return [abi::push_args(args), print_call, abi::pop_args(args.len())].concat();

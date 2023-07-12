@@ -110,15 +110,19 @@ pub fn scan(source_code: String) -> Vec<Vec<Token>> {
         if let Some(token) = token {
             println!("Token: {:?}", token);
             if token == Token::Newline {
-                tokens.push(line.clone());
-                line.clear();
+                if !line.is_empty() {
+                    tokens.push(line.clone());
+                    line.clear();
+                }
             } else if token != Token::Whitespace {
                 line.push(token);
             }
         }
         start += advanced;
     }
-    tokens.push(line.clone());
+    if !line.is_empty() {
+        tokens.push(line.clone());
+    }
 
     tokens
 }
