@@ -103,25 +103,20 @@ fn scan_token(s: &str) -> (Option<Token>, usize) {
 
 pub fn scan(source_code: String) -> Vec<Vec<Token>> {
     let mut tokens: Vec<Vec<Token>> = vec![];
-    let mut start = 0;
-    let mut line: Vec<Token> = vec![];
-    while start < source_code.len() {
-        let (token, advanced) = scan_token(&source_code[start..]);
-        if let Some(token) = token {
-            println!("Token: {:?}", token);
-            if token == Token::Newline {
-                if !line.is_empty() {
-                    tokens.push(line.clone());
-                    line.clear();
+    for line in source_code.lines() {
+        let mut start = 0;
+        let mut line_tokens: Vec<Token> = vec![];
+        while start < line.len() {
+            let (token, advanced) = scan_token(&line[start..]);
+            if let Some(token) = token {
+                println!("Token: {:?}", token);
+                if token != Token::Whitespace {
+                    line_tokens.push(token);
                 }
-            } else if token != Token::Whitespace {
-                line.push(token);
             }
+            start += advanced;
         }
-        start += advanced;
-    }
-    if !line.is_empty() {
-        tokens.push(line.clone());
+        tokens.push(line_tokens.clone());
     }
 
     tokens
