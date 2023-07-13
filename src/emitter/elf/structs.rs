@@ -9,6 +9,34 @@ const DATA_SECTION_OFFSET: DWord =
     (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3) as _;
 pub const DATA_SECTION_ADDRESS_START: DWord = VIRTUAL_ADDRESS_START + DATA_SECTION_OFFSET;
 
+pub type Instructions = Vec<Box<dyn Instruction>>;
+
+pub trait InstructionsTrait {
+    fn to_bin(&self) -> Vec<u8>;
+}
+
+impl InstructionsTrait for Instructions {
+    fn to_bin(&self) -> Vec<u8> {
+        self.iter().fold(vec![], |mut acc, instr| {
+            acc.extend(instr.as_vec());
+            acc
+        })
+    }
+}
+
+pub trait Instruction {
+    fn as_slice(&self) -> &[u8] {
+        let data_ptr = self as *const _ as *const u8;
+        let size = mem::size_of_val(self);
+        unsafe { std::slice::from_raw_parts(data_ptr, size) }
+    }
+
+    fn as_vec(&self) -> Vec<u8> {
+        self.as_slice().to_vec()
+    }
+}
+
+
 pub trait Sliceable: Sized {
     fn as_slice(&self) -> &[u8] {
         let data_ptr = self as *const _ as *const u8;
@@ -99,12 +127,12 @@ pub struct SymbolTable {
 impl Sliceable for SymbolTable {}
 
 pub fn build_header(data_section_size: usize, section_entry: usize) -> ELFHeader {
-    let e_ehsize = mem::size_of::<ELFHeader>().try_into().unwrap();
+    let e_ehsize = mem::size_of::<ELFHeader>() as u16;
     let e_phoff = e_ehsize as DWord;
     let e_shoff = e_phoff + section_entry as DWord;
-    let e_phentsize = mem::size_of::<ProgramHeader>().try_into().unwrap();
+    let e_phentsize = mem::size_of::<ProgramHeader>() as u16;
     let e_phnum = 3;
-    let e_shentsize = mem::size_of::<SectionHeader>().try_into().unwrap();
+    let e_shentsize = mem::size_of::<SectionHeader>() as u16;
     ELFHeader {
         e_ident_magic_number: defs::ELF_MAGIC,
         e_ident_class: defs::ELF_CLASS_64_BIT,

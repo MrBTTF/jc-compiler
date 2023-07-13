@@ -23,7 +23,7 @@ pub fn build_elf(ast: &ast::StatementList) {
 
     let mut elf_emitter = ElfEmitter::new(&data_builder);
 
-    let text_header = &elf_emitter.visit_statement_list(ast);
+    let text_header = elf_emitter.visit_statement_list(ast).to_bin();
 
     let data_header = &build_data_section(data_builder.variables.clone());
     let shstrtab_header = &build_shstrtab_section();
@@ -40,7 +40,7 @@ pub fn build_elf(ast: &ast::StatementList) {
     file.write_all(program_headers).unwrap();
 
     file.write_all(data_header).unwrap();
-    file.write_all(text_header).unwrap();
+    file.write_all(&text_header).unwrap();
     file.write_all(shstrtab_header).unwrap();
 
     file.write_all(&build_section_headers(
@@ -62,49 +62,46 @@ impl ElfEmitter {
         }
     }
 
-    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Vec<u8> {
-        let mut result = vec![];
-        result.extend(Mov64rr::build(Register::Bp, Register::Sp));
+    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Instructions {
+        let mut result: Instructions = vec![];
+        result.push(Mov64rr::new(Register::Bp, Register::Sp));
         result.extend(statement_list.0.iter().fold(vec![], |mut result, stmt| {
             result.extend(self.visit_statement(stmt));
             result
         }));
-        result.extend_from_slice(&stdlib::exit(0));
+        result.extend(stdlib::exit(0));
         result
     }
 
-    fn visit_statement(&mut self, statement: &ast::Statement) -> Vec<u8> {
+    fn visit_statement(&mut self, statement: &ast::Statement) -> Instructions {
         match statement {
             ast::Statement::Expression(expr) => self.visit_expression(expr),
             ast::Statement::Assignment(Assignment(_, expr, AssignmentType::Let)) => match expr {
                 ast::Expression::Literal(ast::Literal::String(s)) => {
-                    let pushes: Vec<_> =
-                        s.as_bytes()
-                            .chunks(8)
-                            .rev()
-                            .fold(vec![], |mut acc, substr| {
-                                let mut value: u64 = 0;
-                                for (i, c) in substr.iter().enumerate() {
-                                    value += (*c as u64) << (8 * i)
-                                }
-                                acc.extend(Mov64::build(Register::Ax, value as i64));
-                                acc.extend(Push::build(Register::Ax));
-                                acc
-                            });
+                    let pushes: Vec<_> = s.as_bytes().chunks(8).rev().fold(
+                        vec![],
+                        |mut acc: Instructions, substr| {
+                            let mut value: u64 = 0;
+                            for (i, c) in substr.iter().enumerate() {
+                                value += (*c as u64) << (8 * i)
+                            }
+                            acc.push(Mov64::new(Register::Ax, value as i64));
+                            acc.push(Push::new(Register::Ax));
+                            acc
+                        },
+                    );
                     pushes
                 }
-                ast::Expression::Literal(ast::Literal::Number(n)) => [
-                    Mov64::build(Register::Ax, n.value),
-                    Push::build(Register::Ax),
-                ]
-                .concat(),
+                ast::Expression::Literal(ast::Literal::Number(n)) => {
+                    vec![Mov64::new(Register::Ax, n.value), Push::new(Register::Ax)]
+                }
                 _ => vec![],
             },
             ast::Statement::Assignment(Assignment(_, _, AssignmentType::Const)) => vec![],
         }
     }
 
-    fn visit_expression(&mut self, expr: &ast::Expression) -> Vec<u8> {
+    fn visit_expression(&mut self, expr: &ast::Expression) -> Instructions {
         match expr {
             ast::Expression::Call(id, expr) => self.visit_call(id, expr),
 
@@ -112,7 +109,7 @@ impl ElfEmitter {
         }
     }
 
-    fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Vec<u8> {
+    fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) -> Instructions {
         let data = match expr {
             ast::Expression::Ident(id) => self
                 .literals
@@ -130,7 +127,11 @@ impl ElfEmitter {
                 ast::Literal::String(_) => print(data.lit.len()),
                 ast::Literal::Number(_) => printd(),
             };
-            return [abi::push_args(args), print_call, abi::pop_args(args.len())].concat();
+            let mut result = vec![];
+            result.extend(abi::push_args(args));
+            result.extend(print_call);
+            result.extend(abi::pop_args(args.len()));
+            return result;
         }
 
         panic!("no such function {}", id.value)

@@ -1,4 +1,6 @@
-use crate::emitter::elf::structs::Sliceable;
+
+
+use super::elf::structs::Instruction;
 
 pub const STDOUT_FD: i32 = 0x1;
 
@@ -9,6 +11,7 @@ const REX_WRITE: u8 = 0b01001000;
 const REX_READ: u8 = 0b01000100;
 const REX_X: u8 = 0b01000010;
 const REX_B: u8 = 0b01000001;
+
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -37,16 +40,15 @@ pub struct Mov32 {
 }
 
 impl Mov32 {
-    pub fn build(reg: Register, value: i32) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register, value: i32) -> Box<Self> {
+        Box::new(Self {
             opcode: 0xb8 + reg as u8,
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Mov32 {}
+impl Instruction for Mov32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -56,16 +58,15 @@ pub struct Mov32rr {
 }
 
 impl Mov32rr {
-    pub fn build(dst: Register, src: Register) -> Vec<u8> {
-        Self {
+    pub fn new(dst: Register, src: Register) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x89,
             mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Mov32rr {}
+impl Instruction for Mov32rr {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -76,17 +77,16 @@ pub struct Sub32 {
 }
 
 impl Sub32 {
-    pub fn build(reg: Register, value: i32) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register, value: i32) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x81,
             mod_rm: 3 << 6 | 5 << 3 | (reg as u8),
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Sub32 {}
+impl Instruction for Sub32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -97,17 +97,16 @@ pub struct Add32 {
 }
 
 impl Add32 {
-    pub fn build(reg: Register, value: i32) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register, value: i32) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x81,
             mod_rm: 3 << 6 | (reg as u8),
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Add32 {}
+impl Instruction for Add32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -118,17 +117,16 @@ pub struct Shl32 {
 }
 
 impl Shl32 {
-    pub fn build(reg: Register, value: u8) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register, value: u8) -> Box<Self> {
+        Box::new(Self {
             opcode: 0xc1,
             mod_rm: 3 << 6 | 4 << 3 | (reg as u8),
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Shl32 {}
+impl Instruction for Shl32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -138,16 +136,15 @@ pub struct Xor32rr {
 }
 
 impl Xor32rr {
-    pub fn build(dst: Register, src: Register) -> Vec<u8> {
-        Self {
+    pub fn new(dst: Register, src: Register) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x31,
             mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Xor32rr {}
+impl Instruction for Xor32rr {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -157,16 +154,15 @@ pub struct Div32 {
 }
 
 impl Div32 {
-    pub fn build(divider: Register) -> Vec<u8> {
-        Self {
+    pub fn new(divider: Register) -> Box<Self> {
+        Box::new(Self {
             opcode: 0xf7,
             mod_rm: 3 << 6 | 6 << 3 | divider as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Div32 {}
+impl Instruction for Div32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -176,16 +172,15 @@ pub struct Or32rr {
 }
 
 impl Or32rr {
-    pub fn build(dst: Register, src: Register) -> Vec<u8> {
-        Self {
+    pub fn new(dst: Register, src: Register) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x9,
             mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Or32rr {}
+impl Instruction for Or32rr {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -194,12 +189,12 @@ pub struct SysCall {
 }
 
 impl SysCall {
-    pub fn build() -> Vec<u8> {
-        SysCall { opcode: 0x050f }.as_vec()
+    pub fn new() -> Box<Self> {
+        Box::new(SysCall { opcode: 0x050f })
     }
 }
 
-impl Sliceable for SysCall {}
+impl Instruction for SysCall {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -209,16 +204,15 @@ pub struct Push32 {
 }
 
 impl Push32 {
-    pub fn build(value: i32) -> Vec<u8> {
-        Self {
+    pub fn new(value: i32) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x68,
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Push32 {}
+impl Instruction for Push32 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -227,15 +221,14 @@ pub struct Push {
 }
 
 impl Push {
-    pub fn build(reg: Register) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x50 + reg as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Push {}
+impl Instruction for Push {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -244,15 +237,14 @@ pub struct Pop {
 }
 
 impl Pop {
-    pub fn build(reg: Register) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register) -> Box<Self> {
+        Box::new(Self {
             opcode: 0x58 + reg as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Pop {}
+impl Instruction for Pop {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -263,17 +255,16 @@ pub struct Mov64 {
 }
 
 impl Mov64 {
-    pub fn build(reg: Register, value: i64) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register, value: i64) -> Box<Self> {
+        Box::new(Self {
             rex: REX_WRITE,
             opcode: 0xb8 + reg as u8,
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Mov64 {}
+impl Instruction for Mov64 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -284,17 +275,16 @@ pub struct Mov64rr {
 }
 
 impl Mov64rr {
-    pub fn build(dst: Register, src: Register) -> Vec<u8> {
-        Self {
+    pub fn new(dst: Register, src: Register) -> Box<Self> {
+        Box::new(Self {
             rex: REX_WRITE,
             opcode: 0x89,
             mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Mov64rr {}
+impl Instruction for Mov64rr {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -306,18 +296,17 @@ pub struct Sub64 {
 }
 
 impl Sub64 {
-    pub fn build(reg: Register, value: i32) -> Vec<u8> {
-        Self {
+    pub fn new(reg: Register, value: i32) -> Box<Self> {
+        Box::new(Self {
             rex: REX_WRITE,
             opcode: 0x81,
             mod_rm: 3 << 6 | 5 << 3 | (reg as u8),
             value,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Sub64 {}
+impl Instruction for Sub64 {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -329,18 +318,17 @@ pub struct Mov64Ref {
 }
 
 impl Mov64Ref {
-    pub fn build(dst: Register, src: Register, offset: i8) -> Vec<u8> {
-        Self {
+    pub fn new(dst: Register, src: Register, offset: i8) -> Box<Self> {
+        Box::new(Self {
             rex: 0x48,
             opcode: 0x8b,
             mod_rm: 1 << 6 | (src as u8) << 3 | (dst as u8),
             offset,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Mov64Ref {}
+impl Instruction for Mov64Ref {}
 
 #[allow(dead_code)]
 #[repr(packed)]
@@ -351,14 +339,13 @@ pub struct Div64 {
 }
 
 impl Div64 {
-    pub fn build(divider: Register) -> Vec<u8> {
-        Self {
+    pub fn new(divider: Register) -> Box<Self> {
+        Box::new(Self {
             rex: 0x48,
             opcode: 0xf7,
             mod_rm: 3 << 6 | 6 << 3 | divider as u8,
-        }
-        .as_vec()
+        })
     }
 }
 
-impl Sliceable for Div64 {}
+impl Instruction for Div64 {}

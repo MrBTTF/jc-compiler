@@ -84,7 +84,7 @@ type Parser = fn(&str) -> (Option<Token>, usize);
 
 fn scan_token(s: &str) -> (Option<Token>, usize) {
     let parsers: Vec<Parser> = vec![newline, operator, string, number, identifier, whitespace];
-    for (i, parser) in parsers.iter().enumerate() {
+    for (_i, parser) in parsers.iter().enumerate() {
         let (token, advanced) = parser(s);
         // dbg!(i, &token, advanced);
         if token.is_some() {
