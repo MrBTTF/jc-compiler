@@ -1,4 +1,4 @@
-use super::{amd64::*, elf::structs::Instructions};
+use super::{amd64::*, structs::Instructions};
 
 #[derive(Debug)]
 pub enum Arg {

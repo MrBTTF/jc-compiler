@@ -1,11 +1,4 @@
-use crate::emitter::elf::structs::Instruction;
-
-use super::{
-    amd64::*,
-    elf::structs::Instructions,
-};
-
-
+use super::{amd64::*, structs::Instruction, structs::Instructions};
 
 pub fn print(length: usize) -> Instructions {
     vec![

@@ -1,6 +1,4 @@
-
-
-use super::elf::structs::Instruction;
+use super::structs::Instruction;
 
 pub const STDOUT_FD: i32 = 0x1;
 
@@ -11,7 +9,6 @@ const REX_WRITE: u8 = 0b01001000;
 const REX_READ: u8 = 0b01000100;
 const REX_X: u8 = 0b01000010;
 const REX_B: u8 = 0b01000001;
-
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -32,6 +29,7 @@ impl From<Register> for u32 {
     }
 }
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Mov32 {
@@ -50,6 +48,7 @@ impl Mov32 {
 
 impl Instruction for Mov32 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Mov32rr {
@@ -68,6 +67,7 @@ impl Mov32rr {
 
 impl Instruction for Mov32rr {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Sub32 {
@@ -88,6 +88,7 @@ impl Sub32 {
 
 impl Instruction for Sub32 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Add32 {
@@ -108,6 +109,7 @@ impl Add32 {
 
 impl Instruction for Add32 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Shl32 {
@@ -128,6 +130,7 @@ impl Shl32 {
 
 impl Instruction for Shl32 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Xor32rr {
@@ -146,6 +149,7 @@ impl Xor32rr {
 
 impl Instruction for Xor32rr {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Div32 {
@@ -164,6 +168,7 @@ impl Div32 {
 
 impl Instruction for Div32 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Or32rr {
@@ -182,6 +187,7 @@ impl Or32rr {
 
 impl Instruction for Or32rr {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct SysCall {
@@ -196,6 +202,7 @@ impl SysCall {
 
 impl Instruction for SysCall {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Push32 {
@@ -214,6 +221,7 @@ impl Push32 {
 
 impl Instruction for Push32 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Push {
@@ -230,6 +238,7 @@ impl Push {
 
 impl Instruction for Push {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Pop {
@@ -246,6 +255,7 @@ impl Pop {
 
 impl Instruction for Pop {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Mov64 {
@@ -266,6 +276,7 @@ impl Mov64 {
 
 impl Instruction for Mov64 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Mov64rr {
@@ -286,6 +297,7 @@ impl Mov64rr {
 
 impl Instruction for Mov64rr {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Sub64 {
@@ -308,6 +320,7 @@ impl Sub64 {
 
 impl Instruction for Sub64 {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Mov64Ref {
@@ -330,6 +343,7 @@ impl Mov64Ref {
 
 impl Instruction for Mov64Ref {}
 
+#[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
 pub struct Div64 {

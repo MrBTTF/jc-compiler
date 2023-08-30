@@ -1,6 +1,9 @@
 use std::{ffi::CString, mem};
 
+use crate::emitter::structs::Sliceable;
+
 use super::defs;
+
 
 pub type DWord = u64;
 
@@ -9,45 +12,6 @@ const DATA_SECTION_OFFSET: DWord =
     (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3) as _;
 pub const DATA_SECTION_ADDRESS_START: DWord = VIRTUAL_ADDRESS_START + DATA_SECTION_OFFSET;
 
-pub type Instructions = Vec<Box<dyn Instruction>>;
-
-pub trait InstructionsTrait {
-    fn to_bin(&self) -> Vec<u8>;
-}
-
-impl InstructionsTrait for Instructions {
-    fn to_bin(&self) -> Vec<u8> {
-        self.iter().fold(vec![], |mut acc, instr| {
-            acc.extend(instr.as_vec());
-            acc
-        })
-    }
-}
-
-pub trait Instruction {
-    fn as_slice(&self) -> &[u8] {
-        let data_ptr = self as *const _ as *const u8;
-        let size = mem::size_of_val(self);
-        unsafe { std::slice::from_raw_parts(data_ptr, size) }
-    }
-
-    fn as_vec(&self) -> Vec<u8> {
-        self.as_slice().to_vec()
-    }
-}
-
-
-pub trait Sliceable: Sized {
-    fn as_slice(&self) -> &[u8] {
-        let data_ptr = self as *const _ as *const u8;
-        let size = mem::size_of::<Self>();
-        unsafe { std::slice::from_raw_parts(data_ptr, size) }
-    }
-
-    fn as_vec(&self) -> Vec<u8> {
-        self.as_slice().to_vec()
-    }
-}
 
 #[derive(Debug)]
 #[repr(C)]

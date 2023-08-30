@@ -1,0 +1,1 @@
+ nasm -f win64 .\example\hello-win.asm -o .\example\hello-win.obj && gcc -m64 example/hello-win.obj -o example/hello-win.exe

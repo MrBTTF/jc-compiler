@@ -2,7 +2,7 @@ use std::{collections::HashMap, ffi::CString};
 
 use super::{
     ast::{self, AssignmentType},
-    elf::structs::{DWord, DATA_SECTION_ADDRESS_START},
+    elf::sections::{DWord, DATA_SECTION_ADDRESS_START},
 };
 
 #[derive(Clone, Debug)]

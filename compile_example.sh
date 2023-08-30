@@ -1,1 +1,1 @@
-nasm -f elf64 src/hello.asm -o example/hello.o &&  ld -s example/hello.o -o example/hello
+nasm -f elf64 example/hello.asm -o example/hello.o &&  ld -s example/hello.o -o example/hello

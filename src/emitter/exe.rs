@@ -1,23 +1,23 @@
-pub mod defs;
-pub mod sections;
+mod sections;
+mod defs;
 
-use std::{collections::HashMap, fs, io::Write};
+use std::{fs, io::Write, collections::HashMap};
 
-use self::{
-    super::{abi, amd64::*, ast, data::*, stdlib, structs::*},
-    sections::*,
-};
+use sections::*;
 
-pub fn build_elf(ast: &ast::StatementList) {
+use super::{ast, data::{DataBuilder, Data}, };
+
+
+pub fn build_exe(ast: &ast::StatementList) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_statement_list(ast);
 
-    let mut elf_emitter = ElfEmitter::new(&data_builder);
+    let mut elf_emitter = ExeEmitter::new(&data_builder);
 
     let instructions = elf_emitter.visit_statement_list(ast);
     // dbg!(&instructions);
     let text_header = instructions.to_bin();
-
+    
     let data_header = &build_data_section(data_builder.variables.clone());
     let shstrtab_header = &build_shstrtab_section();
     let program_headers = &build_program_headers(text_header.len(), data_header.len());
@@ -44,13 +44,15 @@ pub fn build_elf(ast: &ast::StatementList) {
     .unwrap();
 }
 
-pub struct ElfEmitter {
+
+
+pub struct ExeEmitter {
     literals: HashMap<ast::Ident, Data>,
 }
 
-impl ElfEmitter {
+impl ExeEmitter {
     fn new(data_builder: &DataBuilder) -> Self {
-        ElfEmitter {
+        ExeEmitter {
             literals: data_builder.variables.clone(),
         }
     }
@@ -132,18 +134,5 @@ impl ElfEmitter {
         panic!("no such function {}", id.value)
     }
 
-    // fn visit_literal(&mut self, literal: &ast::Literal) -> Vec<u8> {
-    //     match literal {
-    //         ast::Literal::String(_) => todo!(),
-    //         ast::Literal::Number(_) => todo!(),
-    //     }
-    // }
-
-    // fn visit_ident(&mut self, ident: &ast::Ident) -> Vec<u8> {
-    //     todo!()
-    // }
-
-    // fn visit_number(&mut self, number: &ast::Number) -> Vec<u8> {
-    //     todo!()
-    // }
+  
 }
