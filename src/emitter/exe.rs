@@ -46,7 +46,7 @@ pub fn build_exe(ast: &ast::StatementList) {
         0x0,
     );
 
-    let mut text_section: Vec<u8> = vec![
+    let text_section: Vec<u8> = vec![
         0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x20, 0xB9, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x3E,
         0x00, 0x00, 0x00, 0x48, 0x89, 0xC3, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x48, 0x89, 0xDA, 0x49,
         0xB8, 0x00, 0x30, 0x00, 0x40, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB9, 0x00, 0x00, 0x00, 0x00,
@@ -57,11 +57,11 @@ pub fn build_exe(ast: &ast::StatementList) {
         0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
     ];
 
-    let mut data_section: Vec<u8> = vec![
+    let data_section: Vec<u8> = vec![
         0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0x0D, 0x0A, 0x00,
     ];
 
-    let mut pe_layout = PELayout::new(vec![
+    let pe_layout = PELayout::new(vec![
         Section::new(
             ".text".to_string(),
             SectionData::Data(text_section.clone()),
@@ -89,72 +89,6 @@ pub fn build_exe(ast: &ast::StatementList) {
                 | SECTION_CHARACTERISTICS_DISCARDABLE,
         ),
     ]);
-
-    // let mut pointer_to_raw_data = size_of_headers;
-    // let mut virtual_address = SECTION_ALIGNMENT;
-
-    // let virtual_size = text_section.len() as u32;
-    // let diff = FILE_ALIGNMENT as usize - text_section.len();
-    // text_section.extend(std::iter::repeat(0xCC).take(diff));
-    // let text_section_header = build_section_header(
-    //     ".text",
-    //     virtual_address,
-    //     virtual_size,
-    //     pointer_to_raw_data,
-    //     text_section.len() as u32,
-    //     SECTION_CHARACTERISTICS_TEXT | SECTION_CHARACTERISTICS_EXEC | SECTION_CHARACTERISTICS_READ,
-    // );
-    // virtual_address += virtual_size;
-    // virtual_address = round_to_multiple(virtual_address, SECTION_ALIGNMENT);
-    // pointer_to_raw_data += text_section.len() as u32;
-
-    // let mut import_directory = build_import_directory(virtual_address);
-    // let virtual_size = import_directory.len() as u32;
-    // let diff = FILE_ALIGNMENT as usize - import_directory.len();
-    // import_directory.extend(std::iter::repeat(0).take(diff));
-    // let import_directory_section_header = build_section_header(
-    //     ".rdata",
-    //     virtual_address,
-    //     virtual_size,
-    //     pointer_to_raw_data,
-    //     import_directory.len() as u32,
-    //     SECTION_CHARACTERISTICS_DATA | SECTION_CHARACTERISTICS_READ,
-    // );
-    // virtual_address += virtual_size;
-    // virtual_address = round_to_multiple(virtual_address, SECTION_ALIGNMENT);
-    // pointer_to_raw_data += import_directory.len() as u32;
-
-    // let virtual_size = data_section.len() as u32;
-    // let diff = FILE_ALIGNMENT as usize - data_section.len();
-    // data_section.extend(std::iter::repeat(0).take(diff));
-    // let data_section_header = build_section_header(
-    //     ".data",
-    //     virtual_address,
-    //     virtual_size,
-    //     pointer_to_raw_data,
-    //     data_section.len() as u32,
-    //     SECTION_CHARACTERISTICS_DATA | SECTION_CHARACTERISTICS_READ | SECTION_CHARACTERISTICS_WRITE,
-    // );
-    // virtual_address += virtual_size;
-    // virtual_address = round_to_multiple(virtual_address, SECTION_ALIGNMENT);
-    // pointer_to_raw_data += data_section.len() as u32;
-
-    // let mut relocation_section: Vec<u8> = build_relocation_section();
-
-    // let virtual_size = relocation_section.len() as u32;
-    // let virtual_size = round_to_multiple(virtual_size, 4);
-    // let diff = FILE_ALIGNMENT as usize - relocation_section.len();
-    // relocation_section.extend(std::iter::repeat(0).take(diff));
-    // let relocation_section_header = build_section_header(
-    //     ".reloc",
-    //     virtual_address,
-    //     virtual_size,
-    //     pointer_to_raw_data,
-    //     relocation_section.len() as u32,
-    //     SECTION_CHARACTERISTICS_DATA
-    //         | SECTION_CHARACTERISTICS_READ
-    //         | SECTION_CHARACTERISTICS_DISCARDABLE,
-    // );
 
     let text_section = pe_layout.get_section(".text");
     let import_directory_section = pe_layout.get_section(".rdata");

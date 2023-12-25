@@ -1,9 +1,6 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    mem, usize, vec,
-};
+use std::{collections::BTreeMap, mem, usize};
 
-use crate::emitter::{elf::sections, structs::Sliceable};
+use crate::emitter::structs::Sliceable;
 
 use super::defs::*;
 
