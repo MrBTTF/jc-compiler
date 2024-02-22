@@ -12,6 +12,9 @@ pub const FILE_ALIGNMENT: u32 = 0x200;
 pub const SECTION_ALIGNMENT: u32 = 0x1000;
 
 pub fn round_to_multiple(num: u32, multiple: u32) -> u32 {
+    if num == 0 {
+        return 0;
+    }
     multiple * ((num - 1) / multiple) + multiple
 }
 
@@ -27,21 +30,15 @@ const IMAGE_SIZEOF_SHORT_NAME: usize = 8;
 
 const IMAGE_BASE: u64 = 0x140000000;
 
-#[derive(Debug, Clone)]
-pub enum SectionData {
-    Data(Vec<u8>),
-    TextData(Instructions, HashMap<i32, String>),
-    DataCallback(fn(u32) -> Vec<u8>),
-    ImportData(
-        fn(u32, BTreeMap<Vec<u8>, Vec<HintEntry>>) -> ImportDirectory,
-        BTreeMap<Vec<u8>, Vec<HintEntry>>,
-    ),
+pub fn get_data_aligned(mut data: Vec<u8>) -> Vec<u8> {
+    let diff = round_to_multiple(data.len() as u32, FILE_ALIGNMENT) - data.len() as u32;
+    data.extend(std::iter::repeat(0x0).take(diff as usize));
+    data
 }
 
 #[derive(Debug, Clone)]
 pub struct Section {
     name: String,
-    data: SectionData,
     pub virtual_address: u32,
     virtual_size: u32,
     pointer_to_raw_data: u32,
@@ -50,26 +47,19 @@ pub struct Section {
 }
 
 impl Section {
-    pub fn new(name: String, data: SectionData, characteristics: u32) -> Self {
+    pub fn new(name: String, data_size: u32, characteristics: u32) -> Self {
+        let size_of_raw_data = round_to_multiple(data_size, FILE_ALIGNMENT);
         Self {
             name,
-            data,
             characteristics,
             virtual_address: 0,
-            virtual_size: 0,
+            virtual_size: data_size,
             pointer_to_raw_data: 0,
-            size_of_raw_data: 0,
+            size_of_raw_data,
         }
     }
 
     pub fn get_header(&self) -> Vec<u8> {
-        match &self.data {
-            SectionData::DataCallback(_) | SectionData::ImportData(_, _) => {
-                panic!("Cannot produce section header for section with data callback")
-            }
-            SectionData::Data(_) => (),
-            SectionData::TextData(_, _) => todo!(),
-        };
         build_section_header(
             &self.name,
             self.virtual_address,
@@ -80,27 +70,12 @@ impl Section {
         )
     }
 
-    fn get_data(&self) -> Vec<u8> {
-        match &self.data {
-            SectionData::Data(data) => data.to_vec(),
-            SectionData::DataCallback(data) => data(self.virtual_address),
-            SectionData::ImportData(data, libs) => {
-                data(self.virtual_address, libs.clone()).as_vec()
-            }
-            SectionData::TextData(_, _) => todo!(),
-        }
-    }
-
-    pub fn get_data_aligned(&self) -> Vec<u8> {
-        let mut data = self.get_data().to_vec();
-        let diff = FILE_ALIGNMENT as usize - data.len();
-        data.extend(std::iter::repeat(0x0).take(diff));
-        data
-    }
-
-    pub fn set_data(&mut self, data: SectionData) {
-        self.data = data;
-    }
+    // pub fn get_data_aligned(&self) -> Vec<u8> {
+    //     let mut data = self.get_data().to_vec();
+    //     let diff = FILE_ALIGNMENT as usize - data.len();
+    //     data.extend(std::iter::repeat(0x0).take(diff));
+    //     data
+    // }
 }
 
 #[derive(Debug)]
@@ -111,7 +86,6 @@ pub struct SectionLayout {
     text_size: u32,
     data_size: u32,
     bss_size: u32,
-    pub external_symbols: HashMap<String, u32>,
 }
 
 impl SectionLayout {
@@ -130,37 +104,18 @@ impl SectionLayout {
         let mut data_size = 0;
         let bss_size = 0;
 
-        let mut external_symbols = HashMap::new();
-
         let mut _sections = BTreeMap::new();
         for mut section in sections {
             section.pointer_to_raw_data = sections_end;
             section.virtual_address = sections_end_virtual;
 
-            let data = section.get_data();
-            let virtual_size = data.len() as u32;
-            let aligned_data = section.get_data_aligned();
-            let size_of_raw_data = aligned_data.len() as u32;
+            let virtual_size = section.virtual_size;
+            let size_of_raw_data = section.size_of_raw_data;
 
-            if let SectionData::ImportData(data, libs) = section.data {
-                let import_data = data(section.virtual_address, libs.clone());
-                for (i, (_, symbols)) in libs.iter().enumerate() {
-                    for (j, symbol) in symbols.iter().enumerate() {
-                        external_symbols.insert(
-                            String::from_utf8(symbol.name[..symbol.name.len() - 1].to_owned())
-                                .unwrap(),
-                            import_data.iid[i].first_thunk + (j * mem::size_of::<u64>()) as u32,
-                        );
-                    }
-                }
-            }
-
-            section.data = SectionData::Data(data);
             println!("{}: {size_of_raw_data}, {virtual_size}", section.name);
 
             // println!("{:?}", section.data);
             section.size_of_raw_data = size_of_raw_data;
-            section.virtual_size = virtual_size;
 
             if section.characteristics & SECTION_CHARACTERISTICS_TEXT != 0 {
                 text_size += section.size_of_raw_data;
@@ -184,7 +139,6 @@ impl SectionLayout {
             text_size,
             data_size,
             bss_size,
-            external_symbols,
         }
     }
 
@@ -391,6 +345,24 @@ pub struct ImportDirectory {
     iat: Vec<LookupTable>,
     hint: Vec<HintEntry>,
     names: Vec<u8>,
+}
+
+impl ImportDirectory {
+    pub fn get_external_symbols(
+        &self,
+        libs: BTreeMap<Vec<u8>, Vec<HintEntry>>,
+    ) -> HashMap<String, u32> {
+        let mut external_symbols = HashMap::new();
+        for (i, (_, symbols)) in libs.iter().enumerate() {
+            for (j, symbol) in symbols.iter().enumerate() {
+                external_symbols.insert(
+                    String::from_utf8(symbol.name[..symbol.name.len() - 1].to_owned()).unwrap(),
+                    self.iid[i].first_thunk + (j * mem::size_of::<u64>()) as u32,
+                );
+            }
+        }
+        external_symbols
+    }
 }
 
 impl Sliceable for ImportDirectory {

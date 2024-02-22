@@ -21,7 +21,7 @@ use super::{
     amd64::*,
     ast,
     data::{Data, DataBuilder},
-    structs::{Instructions, InstructionsTrait},
+    structs::{Instructions, InstructionsTrait, Sliceable},
 };
 
 pub fn build_exe(_ast: &ast::StatementList) {
@@ -62,15 +62,12 @@ pub fn build_exe(_ast: &ast::StatementList) {
         .unwrap()
         .as_secs() as u32;
 
-
     let mut calls = BTreeMap::new();
     calls.insert(4, "__acrt_iob_func".to_string());
     calls.insert(10, "__stdio_common_vfprintf".to_string());
     calls.insert(12, "ExitProcess".to_string());
 
     let mut instructions: Instructions = vec![
-        // text_section.push(  Push::new(Register::Bp));
-        // text_section.push(  Mov64rr::new(Register::Bp, Register::Sp));
         Push::new(Register::Bp),
         Mov64rr::new(Register::Bp, Register::Sp),
         Sub64::new(Register::Sp, 0x20),
@@ -86,71 +83,63 @@ pub fn build_exe(_ast: &ast::StatementList) {
         Call::new(0x0),
     ];
 
-  
-    let text_section_bin = instructions.to_bin();
+    let text_section_data = instructions.to_bin();
 
-    let data_section: Vec<u8> = vec![
+    let data_section_data: Vec<u8> = vec![
         0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0x0D, 0x0A, 0x00,
     ];
 
-    let mut section_layout = SectionLayout::new(vec![
+    let section_layout = SectionLayout::new(vec![
         Section::new(
             ".text".to_string(),
-            SectionData::Data(text_section_bin.clone()),
+            (text_section_data.len() + mem::size_of::<Jmp>() * calls.len()) as u32,
             SECTION_CHARACTERISTICS_TEXT
                 | SECTION_CHARACTERISTICS_EXEC
                 | SECTION_CHARACTERISTICS_READ,
         ),
         Section::new(
             ".rdata".to_string(),
-            SectionData::ImportData(build_import_directory, libs),
+            build_import_directory(0, libs.clone()).as_vec().len() as u32,
             SECTION_CHARACTERISTICS_DATA | SECTION_CHARACTERISTICS_READ,
         ),
         Section::new(
             ".data".to_string(),
-            SectionData::Data(data_section.clone()),
+            data_section_data.len() as u32,
             SECTION_CHARACTERISTICS_DATA
                 | SECTION_CHARACTERISTICS_READ
                 | SECTION_CHARACTERISTICS_WRITE,
         ),
         Section::new(
             ".reloc".to_string(),
-            SectionData::Data(build_relocation_section().clone()),
+            build_relocation_section().clone().len() as u32,
             SECTION_CHARACTERISTICS_DATA
                 | SECTION_CHARACTERISTICS_READ
                 | SECTION_CHARACTERISTICS_DISCARDABLE,
         ),
     ]);
 
-    let mut text_section = section_layout.get_section(".text");
+    let text_section = section_layout.get_section(".text");
     let import_directory_section = section_layout.get_section(".rdata");
     let data_section = section_layout.get_section(".data");
     let relocation_section = section_layout.get_section(".reloc");
 
-    for (i, (c, call)) in calls.iter().enumerate() {
-        let mut address = section_layout.external_symbols[call];
-        println!("{}: {:0x}", call, address);
-        address -= text_section.virtual_address
-            + text_section_bin.len() as u32
-            + ((i + 1) * mem::size_of::<Jmp>()) as u32;
-        println!("{}: {:0x}", call, address);
-        instructions.push(Jmp::new(address));
-        let call_address = text_section_bin.len() as u32
-            - instructions[..*c + 1].to_vec().to_bin().len() as u32
-            + ((i) * mem::size_of::<Jmp>()) as u32;
+    let import_directory_data =
+        build_import_directory(import_directory_section.virtual_address, libs.clone());
+    let relocation_section_data = build_relocation_section();
 
-        let call_instruction = instructions[*c].borrow_mut();
-        *call_instruction = Call::new(call_address as u16);
-    }
-    text_section.set_data(SectionData::Data(instructions.to_bin()));
-    section_layout.set_section(".text", text_section.clone());
-
-    //TODO: Debug relocations
+    let external_symbols = import_directory_data.get_external_symbols(libs);
+    instructions = compute_calls(
+        instructions,
+        text_section.virtual_address,
+        calls,
+        external_symbols,
+    );
+    let text_section_data: Vec<u8> = instructions.to_bin();
 
     let dos_header = build_dos_header();
     let nt_header = build_nt_header(created_at, section_layout);
 
-    let mut headers = [
+    let headers = [
         dos_header,
         nt_header,
         text_section.get_header(),
@@ -159,18 +148,43 @@ pub fn build_exe(_ast: &ast::StatementList) {
         relocation_section.get_header(),
     ]
     .concat();
-    let diff = 2 * FILE_ALIGNMENT as usize - headers.len();
-    headers.extend(std::iter::repeat(0).take(diff));
-    // println!("{:#?}", import_directory);
 
     let mut file = fs::File::create("bin/hello.exe").unwrap();
-    file.write_all(&headers).unwrap();
-    file.write_all(&text_section.get_data_aligned()).unwrap();
-    file.write_all(&import_directory_section.get_data_aligned())
-        .unwrap();
-    file.write_all(&data_section.get_data_aligned()).unwrap();
-    file.write_all(&relocation_section.get_data_aligned())
-        .unwrap();
+    write_all_aligned(&mut file, &headers).unwrap();
+    write_all_aligned(&mut file, &text_section_data).unwrap();
+    write_all_aligned(&mut file, &import_directory_data.as_vec()).unwrap();
+    write_all_aligned(&mut file, &data_section_data).unwrap();
+    write_all_aligned(&mut file, &relocation_section_data).unwrap();
+}
+
+fn write_all_aligned(file: &mut fs::File, buf: &[u8]) -> Result<(), std::io::Error> {
+    let buf = get_data_aligned(buf.to_vec());
+    file.write_all(&buf)
+}
+
+fn compute_calls(
+    mut instructions: Instructions,
+    virtual_address: u32,
+    calls: BTreeMap<usize, String>,
+    external_symbols: HashMap<String, u32>,
+) -> Instructions {
+    let text_section_data = instructions.to_bin();
+    for (i, (c, call)) in calls.iter().enumerate() {
+        let mut address = external_symbols[call];
+        println!("{}: {:0x}", call, address);
+        address -= virtual_address
+            + text_section_data.len() as u32
+            + ((i + 1) * mem::size_of::<Jmp>()) as u32;
+        println!("{}: {:0x}", call, address);
+        instructions.push(Jmp::new(address));
+        let call_address = text_section_data.len() as u32
+            - instructions[..*c + 1].to_vec().to_bin().len() as u32
+            + ((i) * mem::size_of::<Jmp>()) as u32;
+
+        let call_instruction = instructions[*c].borrow_mut();
+        *call_instruction = Call::new(call_address as u16);
+    }
+    instructions
 }
 
 // pub struct ExeEmitter {
