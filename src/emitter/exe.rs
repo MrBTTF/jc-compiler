@@ -1,18 +1,53 @@
 mod defs;
 mod sections;
 
-use std::{collections::HashMap, fs, io::Write, mem, time::SystemTime};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    collections::{BTreeMap, HashMap},
+    fs,
+    io::Write,
+    mem,
+    rc::Rc,
+    time::SystemTime,
+};
 
 use sections::*;
+
+use crate::emitter::structs::Instruction;
 
 use self::defs::*;
 
 use super::{
+    amd64::*,
     ast,
     data::{Data, DataBuilder},
+    structs::{Instructions, InstructionsTrait},
 };
 
-pub fn build_exe(ast: &ast::StatementList) {
+pub fn build_exe(_ast: &ast::StatementList) {
+    let mut libs = BTreeMap::new();
+    libs.insert(
+        "KERNEL32.dll\0".as_bytes().to_vec(),
+        vec![HintEntry {
+            hint: 0x167_u16,
+            name: "ExitProcess\0".as_bytes().to_vec(),
+        }],
+    );
+
+    libs.insert(
+        "api-ms-win-crt-stdio-l1-1-0.dll\0".as_bytes().to_vec(),
+        vec![
+            HintEntry {
+                hint: 0_u16,
+                name: "__acrt_iob_func\0".as_bytes().to_vec(),
+            },
+            HintEntry {
+                hint: 0x3_u16,
+                name: "__stdio_common_vfprintf\0".as_bytes().to_vec(),
+            },
+        ],
+    );
+
     // let mut data_builder = DataBuilder::default();
     // data_builder.visit_statement_list(ast);
 
@@ -27,51 +62,48 @@ pub fn build_exe(ast: &ast::StatementList) {
         .unwrap()
         .as_secs() as u32;
 
-    let size_of_dos_header = mem::size_of::<DOSHeader>() as u32;
-    let size_of_optional_header = mem::size_of::<OptionalHeader>() as u32;
-    let number_of_sections = 4;
-    let size_of_section_header = number_of_sections as u32 * mem::size_of::<SectionHeader>() as u32;
 
-    let size_of_headers = size_of_dos_header + size_of_optional_header + size_of_section_header;
-    let size_of_headers = round_to_multiple(size_of_headers, FILE_ALIGNMENT);
+    let mut calls = BTreeMap::new();
+    calls.insert(4, "__acrt_iob_func".to_string());
+    calls.insert(10, "__stdio_common_vfprintf".to_string());
+    calls.insert(12, "ExitProcess".to_string());
 
-    let dos_header = build_dos_header();
-    let nt_header = build_nt_header(
-        created_at,
-        number_of_sections,
-        size_of_optional_header,
-        size_of_headers,
-        0x200,
-        0x600,
-        0x0,
-    );
-
-    let text_section: Vec<u8> = vec![
-        0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, 0x20, 0xB9, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x3E,
-        0x00, 0x00, 0x00, 0x48, 0x89, 0xC3, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x48, 0x89, 0xDA, 0x49,
-        0xB8, 0x00, 0x30, 0x00, 0x40, 0x01, 0x00, 0x00, 0x00, 0x41, 0xB9, 0x00, 0x00, 0x00, 0x00,
-        0xE8, 0x2E, 0x00, 0x00, 0x00, 0x48, 0x31, 0xC0, 0xE8, 0x06, 0x00, 0x00, 0x00, 0xCC, 0xCC,
-        0xCC, 0xCC, 0xCC, 0xCC, 0xFF, 0x25, 0x1E, 0x10, 0x0, 0x0, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
-        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xFF, 0x25, 0x1E, 0x10, 0x0, 0x0, 0xCC, 0xCC, 0xCC, 0xCC,
-        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xFF, 0x25, 0x16, 0x10, 0x0, 0x0, 0xCC, 0xCC, 0xCC,
-        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+    let mut instructions: Instructions = vec![
+        // text_section.push(  Push::new(Register::Bp));
+        // text_section.push(  Mov64rr::new(Register::Bp, Register::Sp));
+        Push::new(Register::Bp),
+        Mov64rr::new(Register::Bp, Register::Sp),
+        Sub64::new(Register::Sp, 0x20),
+        Mov32::new(Register::Cx, 0x1),
+        Call::new(0x0),
+        Mov64rr::new(Register::Bx, Register::Ax),
+        Mov32::new(Register::Cx, 0x0),
+        Mov64rr::new(Register::Dx, Register::Bx),
+        Mov64Ext::new(RegisterExt::R8, 0x140003000),
+        Mov32Ext::new(RegisterExt::R9, 0x0),
+        Call::new(0x0),
+        Xor64rr::new(Register::Ax, Register::Ax),
+        Call::new(0x0),
     ];
+
+  
+    let text_section_bin = instructions.to_bin();
 
     let data_section: Vec<u8> = vec![
         0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64, 0x0D, 0x0A, 0x00,
     ];
 
-    let pe_layout = PELayout::new(vec![
+    let mut section_layout = SectionLayout::new(vec![
         Section::new(
             ".text".to_string(),
-            SectionData::Data(text_section.clone()),
+            SectionData::Data(text_section_bin.clone()),
             SECTION_CHARACTERISTICS_TEXT
                 | SECTION_CHARACTERISTICS_EXEC
                 | SECTION_CHARACTERISTICS_READ,
         ),
         Section::new(
             ".rdata".to_string(),
-            SectionData::DataCallback(build_import_directory),
+            SectionData::ImportData(build_import_directory, libs),
             SECTION_CHARACTERISTICS_DATA | SECTION_CHARACTERISTICS_READ,
         ),
         Section::new(
@@ -90,10 +122,33 @@ pub fn build_exe(ast: &ast::StatementList) {
         ),
     ]);
 
-    let text_section = pe_layout.get_section(".text");
-    let import_directory_section = pe_layout.get_section(".rdata");
-    let data_section = pe_layout.get_section(".data");
-    let relocation_section = pe_layout.get_section(".reloc");
+    let mut text_section = section_layout.get_section(".text");
+    let import_directory_section = section_layout.get_section(".rdata");
+    let data_section = section_layout.get_section(".data");
+    let relocation_section = section_layout.get_section(".reloc");
+
+    for (i, (c, call)) in calls.iter().enumerate() {
+        let mut address = section_layout.external_symbols[call];
+        println!("{}: {:0x}", call, address);
+        address -= text_section.virtual_address
+            + text_section_bin.len() as u32
+            + ((i + 1) * mem::size_of::<Jmp>()) as u32;
+        println!("{}: {:0x}", call, address);
+        instructions.push(Jmp::new(address));
+        let call_address = text_section_bin.len() as u32
+            - instructions[..*c + 1].to_vec().to_bin().len() as u32
+            + ((i) * mem::size_of::<Jmp>()) as u32;
+
+        let call_instruction = instructions[*c].borrow_mut();
+        *call_instruction = Call::new(call_address as u16);
+    }
+    text_section.set_data(SectionData::Data(instructions.to_bin()));
+    section_layout.set_section(".text", text_section.clone());
+
+    //TODO: Debug relocations
+
+    let dos_header = build_dos_header();
+    let nt_header = build_nt_header(created_at, section_layout);
 
     let mut headers = [
         dos_header,

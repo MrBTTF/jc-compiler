@@ -1,6 +1,9 @@
-use std::{collections::BTreeMap, mem, usize};
+use std::{
+    collections::{BTreeMap, HashMap},
+    mem, usize,
+};
 
-use crate::emitter::structs::Sliceable;
+use crate::emitter::structs::{Instructions, Sliceable};
 
 use super::defs::*;
 
@@ -27,17 +30,22 @@ const IMAGE_BASE: u64 = 0x140000000;
 #[derive(Debug, Clone)]
 pub enum SectionData {
     Data(Vec<u8>),
+    TextData(Instructions, HashMap<i32, String>),
     DataCallback(fn(u32) -> Vec<u8>),
+    ImportData(
+        fn(u32, BTreeMap<Vec<u8>, Vec<HintEntry>>) -> ImportDirectory,
+        BTreeMap<Vec<u8>, Vec<HintEntry>>,
+    ),
 }
 
 #[derive(Debug, Clone)]
 pub struct Section {
     name: String,
     data: SectionData,
-    virtual_address: u32,
+    pub virtual_address: u32,
     virtual_size: u32,
     pointer_to_raw_data: u32,
-    size_of_raw_data: u32,
+    pub size_of_raw_data: u32,
     characteristics: u32,
 }
 
@@ -56,10 +64,11 @@ impl Section {
 
     pub fn get_header(&self) -> Vec<u8> {
         match &self.data {
-            SectionData::DataCallback(_) => {
+            SectionData::DataCallback(_) | SectionData::ImportData(_, _) => {
                 panic!("Cannot produce section header for section with data callback")
             }
             SectionData::Data(_) => (),
+            SectionData::TextData(_, _) => todo!(),
         };
         build_section_header(
             &self.name,
@@ -75,6 +84,10 @@ impl Section {
         match &self.data {
             SectionData::Data(data) => data.to_vec(),
             SectionData::DataCallback(data) => data(self.virtual_address),
+            SectionData::ImportData(data, libs) => {
+                data(self.virtual_address, libs.clone()).as_vec()
+            }
+            SectionData::TextData(_, _) => todo!(),
         }
     }
 
@@ -84,15 +97,24 @@ impl Section {
         data.extend(std::iter::repeat(0x0).take(diff));
         data
     }
+
+    pub fn set_data(&mut self, data: SectionData) {
+        self.data = data;
+    }
 }
 
 #[derive(Debug)]
-pub struct PELayout {
+pub struct SectionLayout {
     sections: BTreeMap<String, Section>,
+    size_of_optional_header: u32,
     size_of_headers: u32,
+    text_size: u32,
+    data_size: u32,
+    bss_size: u32,
+    pub external_symbols: HashMap<String, u32>,
 }
 
-impl PELayout {
+impl SectionLayout {
     pub fn new(sections: Vec<Section>) -> Self {
         let size_of_dos_header = mem::size_of::<DOSHeader>() as u32;
         let size_of_optional_header = mem::size_of::<OptionalHeader>() as u32;
@@ -104,19 +126,47 @@ impl PELayout {
         let mut sections_end = size_of_headers;
         let mut sections_end_virtual = BASE_OF_CODE;
 
+        let mut text_size = 0;
+        let mut data_size = 0;
+        let bss_size = 0;
+
+        let mut external_symbols = HashMap::new();
+
         let mut _sections = BTreeMap::new();
         for mut section in sections {
             section.pointer_to_raw_data = sections_end;
             section.virtual_address = sections_end_virtual;
 
             let data = section.get_data();
-            let aligned_data = section.get_data_aligned();
             let virtual_size = data.len() as u32;
+            let aligned_data = section.get_data_aligned();
             let size_of_raw_data = aligned_data.len() as u32;
+
+            if let SectionData::ImportData(data, libs) = section.data {
+                let import_data = data(section.virtual_address, libs.clone());
+                for (i, (_, symbols)) in libs.iter().enumerate() {
+                    for (j, symbol) in symbols.iter().enumerate() {
+                        external_symbols.insert(
+                            String::from_utf8(symbol.name[..symbol.name.len() - 1].to_owned())
+                                .unwrap(),
+                            import_data.iid[i].first_thunk + (j * mem::size_of::<u64>()) as u32,
+                        );
+                    }
+                }
+            }
+
             section.data = SectionData::Data(data);
-            println!("{size_of_raw_data}, {virtual_size}");
+            println!("{}: {size_of_raw_data}, {virtual_size}", section.name);
+
+            // println!("{:?}", section.data);
             section.size_of_raw_data = size_of_raw_data;
             section.virtual_size = virtual_size;
+
+            if section.characteristics & SECTION_CHARACTERISTICS_TEXT != 0 {
+                text_size += section.size_of_raw_data;
+            } else if section.characteristics & SECTION_CHARACTERISTICS_DATA != 0 {
+                data_size += section.size_of_raw_data;
+            }
 
             sections_end =
                 round_to_multiple(sections_end + section.size_of_raw_data, FILE_ALIGNMENT);
@@ -129,12 +179,23 @@ impl PELayout {
         // println!("{:#?}", _sections);
         Self {
             sections: _sections,
+            size_of_optional_header,
             size_of_headers,
+            text_size,
+            data_size,
+            bss_size,
+            external_symbols,
         }
     }
 
     pub fn get_section(&self, name: &str) -> Section {
         self.sections.get(name).unwrap().clone()
+    }
+
+    pub fn set_section(&mut self, name: &str, section: Section) {
+        self.sections
+            .entry(name.to_string())
+            .and_modify(|s| *s = section);
     }
 }
 
@@ -267,7 +328,7 @@ pub struct SectionHeader {
 
 impl Sliceable for SectionHeader {}
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct ImageImportDescriptor {
     original_first_thunk: u32,
@@ -279,14 +340,91 @@ pub struct ImageImportDescriptor {
 
 impl Sliceable for ImageImportDescriptor {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
-pub struct ImageImportByName {
-    hint: u16,
-    name: u8,
+pub struct LookupTable {
+    hint_rvas: Vec<u64>,
 }
 
-impl Sliceable for ImageImportByName {}
+impl LookupTable {
+    pub fn new(mut hint_rvas: Vec<u64>) -> Self {
+        hint_rvas.push(0);
+        Self { hint_rvas }
+    }
+}
+
+impl Sliceable for LookupTable {
+    fn as_slice(&self) -> &[u8] {
+        panic!("Cannot convert LookupTable to slice")
+    }
+
+    fn as_vec(&self) -> Vec<u8> {
+        self.hint_rvas
+            .iter()
+            .flat_map(|n| n.to_le_bytes())
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct HintEntry {
+    pub hint: u16,
+    pub name: Vec<u8>,
+}
+
+impl Sliceable for HintEntry {
+    fn as_slice(&self) -> &[u8] {
+        panic!("Cannot convert HintTable to slice")
+    }
+
+    fn as_vec(&self) -> Vec<u8> {
+        [&self.hint.to_le_bytes(), self.name.as_slice()].concat()
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct ImportDirectory {
+    iid: Vec<ImageImportDescriptor>,
+    ilt: Vec<LookupTable>,
+    iat: Vec<LookupTable>,
+    hint: Vec<HintEntry>,
+    names: Vec<u8>,
+}
+
+impl Sliceable for ImportDirectory {
+    fn as_slice(&self) -> &[u8] {
+        panic!("Cannot convert ImportDirectory to slice")
+    }
+
+    fn as_vec(&self) -> Vec<u8> {
+        [
+            self.iid
+                .iter()
+                .map(|t| t.as_vec())
+                .collect::<Vec<_>>()
+                .concat(),
+            self.ilt
+                .iter()
+                .map(|t| t.as_vec())
+                .collect::<Vec<_>>()
+                .concat(),
+            self.iat
+                .iter()
+                .map(|t| t.as_vec())
+                .collect::<Vec<_>>()
+                .concat(),
+            self.hint
+                .iter()
+                .map(|t| t.as_vec())
+                .collect::<Vec<_>>()
+                .concat(),
+            self.names.clone(),
+        ]
+        .concat()
+    }
+}
 
 #[derive(Debug)]
 #[repr(C)]
@@ -324,33 +462,25 @@ pub fn build_dos_header() -> Vec<u8> {
     .as_vec()
 }
 
-pub fn build_nt_header(
-    created_at: u32,
-    number_of_sections: u16,
-    size_of_optional_header: u32,
-    size_of_headers: u32,
-    text_size: u32,
-    data_size: u32,
-    bss_size: u32,
-) -> Vec<u8> {
+pub fn build_nt_header(created_at: u32, section_layout: SectionLayout) -> Vec<u8> {
     NTHeaders {
         pe_signature: [b'P', b'E', 0, 0],
         file_header: FileHeader {
             machine: IMAGE_FILE_MACHINE_AMD64,
-            number_of_sections,
+            number_of_sections: section_layout.sections.len() as u16,
             time_date_stamp: created_at,
             pointer_to_symbol_table: 0,
             number_of_symbols: 0,
-            size_of_optional_header: size_of_optional_header as u16,
+            size_of_optional_header: section_layout.size_of_optional_header as u16,
             characteristics: IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_LARGE_ADDRESS_AWARE,
         },
         optional_header: OptionalHeader {
             magic: IMAGE_FILE_MACHINE_TYPR_PE32_PLUS,
             major_linker_version: 0xe,
             minor_linker_version: 0x0,
-            size_of_code: text_size,
-            size_of_initialized_data: data_size,
-            size_of_uninitialized_data: bss_size,
+            size_of_code: section_layout.text_size,
+            size_of_initialized_data: section_layout.data_size,
+            size_of_uninitialized_data: section_layout.bss_size,
             address_of_entry_point: BASE_OF_CODE,
             base_of_code: BASE_OF_CODE,
             image_base: IMAGE_BASE,
@@ -364,7 +494,7 @@ pub fn build_nt_header(
             minor_subsystem_version: 0x0,
             win32_version_value: 0x0,
             size_of_image: 0x5000,
-            size_of_headers,
+            size_of_headers: section_layout.size_of_headers,
             check_sum: 0x0,
             subsystem: IMAGE_SUBSYSTEM_WINDOWS_CUI,
             dll_characteristics: IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA
@@ -431,86 +561,162 @@ pub fn build_section_header(
     .as_vec()
 }
 
-pub fn build_import_directory(offset: u32) -> Vec<u8> {
-    let lookup_table_offset = offset + 3 * mem::size_of::<ImageImportDescriptor>() as u32;
+pub fn build_import_directory(
+    offset: u32,
+    libs: BTreeMap<Vec<u8>, Vec<HintEntry>>,
+) -> ImportDirectory {
+    let lookup_table_offset =
+        offset + ((libs.len() + 1) * mem::size_of::<ImageImportDescriptor>()) as u32;
 
-    println!("{lookup_table_offset:0x}");
-    let lookup_table_size = 5 * mem::size_of::<u64>() as u32;
-    let hint_table_offset = lookup_table_offset + 2 * lookup_table_size;
-    println!("{hint_table_offset:0x}");
+    // println!("lookup_table_offset: {lookup_table_offset:0x}");
+    // let  lookup_table_size = 5 * mem::size_of::<u64>() as u32;
+    let mut lookup_table_size = 0_u32;
+    // println!("{hint_table_offset:0x}");
 
-    let hint_names = [
-        "ExitProcess\0".as_bytes(),
-        "__acrt_iob_func\0".as_bytes(),
-        "__stdio_common_vfprintf\0".as_bytes(),
-    ];
+    // let hint_names = [
+    //     "ExitProcess\0".as_bytes(),
+    //     "__acrt_iob_func\0".as_bytes(),
+    //     "__stdio_common_vfprintf\0".as_bytes(),
+    // ];
 
-    let lookup_table = [
-        (hint_table_offset as u64).to_le_bytes(),
-        0_u64.to_le_bytes(),
-        (hint_table_offset as u64 + (mem::size_of::<u16>() + hint_names[0].len()) as u64)
-            .to_le_bytes(),
-        (hint_table_offset as u64
-            + (mem::size_of::<u16>()
-                + hint_names[0].len()
-                + mem::size_of::<u16>()
-                + hint_names[1].len()) as u64)
-            .to_le_bytes(),
-        0_u64.to_le_bytes(),
-    ]
-    .concat();
-    let address_table = lookup_table.clone();
+    let mut hint_names: Vec<Vec<u8>> = vec![];
+    let mut hint_name_table: Vec<HintEntry> = vec![];
+
+    for (_, symbols) in libs.iter() {
+        for symbol in symbols.iter() {
+            hint_names.push(symbol.name.clone());
+            hint_name_table.push(symbol.clone());
+            lookup_table_size += mem::size_of::<u64>() as u32;
+        }
+        lookup_table_size += mem::size_of::<u64>() as u32;
+    }
+
+    let address_table_size = &lookup_table_size;
     let address_table_offset = lookup_table_offset + lookup_table_size;
 
-    let hint_name_table: Vec<u8> = [
-        [&0x167_u16.to_le_bytes(), hint_names[0]].concat(),
-        [&0_u16.to_le_bytes(), hint_names[1]].concat(),
-        [&0x3_u16.to_le_bytes(), hint_names[2]].concat(),
-        [&0x3_u16.to_le_bytes(), hint_names[2]].concat(),
-    ]
-    .concat();
+    let hint_table_offset = lookup_table_offset + lookup_table_size + address_table_size;
 
-    let names_offset = hint_table_offset + hint_name_table.len() as u32;
-    let names = [
-        "KERNEL32.dll\0".as_bytes(),
-        "api-ms-win-crt-stdio-l1-1-0.dll\0".as_bytes(),
-    ];
+    // println!("hint_table_offset: {hint_table_offset:0x}");
 
-    let directory_table = [
-        ImageImportDescriptor {
-            original_first_thunk: lookup_table_offset,
+    // let lookup_table = vec![
+    //     LookupTable::new(vec![hint_table_offset as u64]),
+    //     LookupTable::new(vec![
+    //         hint_table_offset as u64 + (hint_size + hint_names[0].len()) as u64,
+    //         hint_table_offset as u64
+    //             + (hint_size + hint_names[0].len() + hint_size + hint_names[1].len()) as u64,
+    //     ]),
+    // ];
+
+    let mut hint_table_size = 0;
+    let mut lookup_table_current_size = 0;
+    let mut lookup_table = vec![];
+    let mut names_offset = hint_table_offset
+        + (hint_name_table
+            .iter()
+            .fold(0, |acc, hint| acc + hint.as_vec().len())) as u32;
+    let mut directory_table: Vec<ImageImportDescriptor> = vec![];
+
+    for (lib, symbols) in libs.iter() {
+        directory_table.push(ImageImportDescriptor {
+            original_first_thunk: lookup_table_offset + lookup_table_current_size,
             time_date_stamp: 0,
             forwarder_chain: 0,
             name: names_offset,
-            first_thunk: address_table_offset,
+            first_thunk: address_table_offset + lookup_table_current_size,
+        });
+        names_offset += lib.len() as u32;
+
+        let mut lookup_symbols = vec![];
+        for symbol in symbols.iter() {
+            lookup_symbols.push(hint_table_offset as u64 + hint_table_size);
+            hint_table_size += symbol.clone().as_vec().len() as u64;
         }
-        .as_vec(),
-        ImageImportDescriptor {
-            original_first_thunk: lookup_table_offset + 2 * mem::size_of::<u64>() as u32,
-            time_date_stamp: 0,
-            forwarder_chain: 0,
-            name: names_offset + names[0].len() as u32,
-            first_thunk: address_table_offset + 2 * mem::size_of::<u64>() as u32,
-        }
-        .as_vec(),
-        ImageImportDescriptor {
-            original_first_thunk: 0,
-            time_date_stamp: 0,
-            forwarder_chain: 0,
-            name: 0,
-            first_thunk: 0,
-        }
-        .as_vec(),
-    ]
-    .concat();
-    [
-        directory_table,
-        lookup_table,
-        address_table,
-        hint_name_table,
-        names.concat(),
-    ]
-    .concat()
+
+        let lookup_entry = LookupTable::new(lookup_symbols);
+        lookup_table_current_size += lookup_entry.as_vec().len() as u32;
+        lookup_table.push(lookup_entry);
+    }
+
+    directory_table.push(ImageImportDescriptor::default());
+
+    // let lookup_table = [
+    //     (hint_table_offset as u64).to_le_bytes(),
+    //     0_u64.to_le_bytes(),
+    //     (hint_table_offset as u64 + (hint_size + hint_names[0].len()) as u64).to_le_bytes(),
+    //     (hint_table_offset as u64
+    //         + (hint_size + hint_names[0].len() + hint_size + hint_names[1].len()) as u64)
+    //         .to_le_bytes(),
+    //     0_u64.to_le_bytes(),
+    // ]
+    // .concat();
+
+    // let hint_name_table = vec![
+    //     HintTable {
+    //         hint: 0x167_u16,
+    //         name: hint_names[0].to_owned(),
+    //     },
+    //     HintTable {
+    //         hint: 0_u16,
+    //         name: hint_names[1].to_owned(),
+    //     },
+    //     HintTable {
+    //         hint: 0x3_u16,
+    //         name: hint_names[2].to_owned(),
+    //     },
+    // ];
+
+    // let hint_name_table: Vec<u8> = [
+    //     [&0x167_u16.to_le_bytes(), hint_names[0]].concat(),
+    //     [&0_u16.to_le_bytes(), hint_names[1]].concat(),
+    //     [&0x3_u16.to_le_bytes(), hint_names[2]].concat(),
+    // ]
+    // .concat();
+
+    // let names_offset = hint_table_offset
+    //     + (hint_name_table
+    //         .iter()
+    //         .fold(0, |acc, hint| acc + hint.as_vec().len())) as u32;
+    // let names = [
+    //     "KERNEL32.dll\0".as_bytes(),
+    //     "api-ms-win-crt-stdio-l1-1-0.dll\0".as_bytes(),
+    // ];
+
+    // let directory_table = vec![
+    //     ImageImportDescriptor {
+    //         original_first_thunk: lookup_table_offset,
+    //         time_date_stamp: 0,
+    //         forwarder_chain: 0,
+    //         name: names_offset,
+    //         first_thunk: address_table_offset,
+    //     },
+    //     ImageImportDescriptor {
+    //         original_first_thunk: lookup_table_offset + 2 * mem::size_of::<u64>() as u32,
+    //         time_date_stamp: 0,
+    //         forwarder_chain: 0,
+    //         name: names_offset + names[0].len() as u32,
+    //         first_thunk: address_table_offset + 2 * mem::size_of::<u64>() as u32,
+    //     },
+    //     ImageImportDescriptor {
+    //         original_first_thunk: 0,
+    //         time_date_stamp: 0,
+    //         forwarder_chain: 0,
+    //         name: 0,
+    //         first_thunk: 0,
+    //     },
+    // ];
+
+    let address_table: Vec<LookupTable> = lookup_table.clone();
+    let names: Vec<Vec<u8>> = libs.into_keys().collect();
+
+    // dbg!(lookup_table.clone());
+
+    ImportDirectory {
+        iid: directory_table,
+        ilt: lookup_table,
+        iat: address_table,
+        hint: hint_name_table,
+        names: names.concat(),
+    }
 }
 
 pub fn build_relocation_section() -> Vec<u8> {
@@ -522,7 +728,8 @@ pub fn build_relocation_section() -> Vec<u8> {
             size_of_block,
         }
         .as_vec(),
-        (((0x1F) | 0xA0 << 8) as u16).to_le_bytes().to_vec(),
+        (((0x22) | 0xA0 << 8) as u16).to_le_bytes().to_vec(), //TODO: calculate offset to data
+        0_u16.to_le_bytes().to_vec(),
     ]
     .concat()
 }

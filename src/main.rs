@@ -10,7 +10,6 @@ mod emitter;
 mod lexer;
 mod parser;
 
-
 fn main() {
     let source_filename = env::args().nth(1).expect("Missing source filename");
     let source_code = fs::read_to_string(source_filename).unwrap();

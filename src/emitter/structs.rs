@@ -1,6 +1,6 @@
-use std::mem;
+use std::{mem, rc::Rc};
 
-pub type Instructions = Vec<Box<dyn Instruction>>;
+pub type Instructions = Vec<Rc<dyn Instruction>>;
 
 pub trait InstructionsTrait {
     fn to_bin(&self) -> Vec<u8>;
@@ -26,6 +26,22 @@ pub trait Instruction: std::fmt::Debug {
         self.as_slice().to_vec()
     }
 }
+
+// trait InstructionClone {
+//     fn clone_dyn(&self) -> Box<dyn InstructionClone>;
+// }
+
+// impl InstructionClone for Box<dyn Instruction> {
+//     fn clone_dyn(&self) -> Box<dyn InstructionClone> {
+//         *self.clone()
+//     }
+// }
+
+// impl Clone for Box<dyn Instruction> {
+//     fn clone(&self) -> Self {
+//         Box::new(*self.clone())
+//     }
+// }
 
 pub trait Sliceable: Sized {
     fn as_slice(&self) -> &[u8] {
