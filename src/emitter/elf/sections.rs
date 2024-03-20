@@ -4,14 +4,12 @@ use crate::emitter::structs::Sliceable;
 
 use super::defs;
 
-
 pub type DWord = u64;
 
 const VIRTUAL_ADDRESS_START: DWord = 0x08000000;
 const DATA_SECTION_OFFSET: DWord =
     (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3) as _;
 pub const DATA_SECTION_ADDRESS_START: DWord = VIRTUAL_ADDRESS_START + DATA_SECTION_OFFSET;
-
 
 #[derive(Debug)]
 #[repr(C)]

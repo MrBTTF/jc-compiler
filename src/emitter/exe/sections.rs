@@ -3,7 +3,10 @@ use std::{
     mem, usize,
 };
 
-use crate::emitter::structs::{Instructions, Sliceable};
+use crate::emitter::{
+    data::DataRef,
+    structs::{Instructions, InstructionsTrait, Sliceable},
+};
 
 use super::defs::*;
 
@@ -28,7 +31,7 @@ const DOS_STUB: [u8; 56] = [
 const IMAGE_NUMBEROF_DIRECTORY_ENTRIES: usize = 16;
 const IMAGE_SIZEOF_SHORT_NAME: usize = 8;
 
-const IMAGE_BASE: u64 = 0x140000000;
+pub const IMAGE_BASE: u64 = 0x140000000;
 
 pub fn get_data_aligned(mut data: Vec<u8>) -> Vec<u8> {
     let diff = round_to_multiple(data.len() as u32, FILE_ALIGNMENT) - data.len() as u32;
@@ -109,13 +112,13 @@ impl SectionLayout {
             section.pointer_to_raw_data = sections_end;
             section.virtual_address = sections_end_virtual;
 
-            let virtual_size = section.virtual_size;
-            let size_of_raw_data = section.size_of_raw_data;
+            // let virtual_size = section.virtual_size;
+            // let size_of_raw_data = section.size_of_raw_data;
 
-            println!("{}: {size_of_raw_data}, {virtual_size}", section.name);
+            // println!("{}: {size_of_raw_data}, {virtual_size}", section.name);
 
             // println!("{:?}", section.data);
-            section.size_of_raw_data = size_of_raw_data;
+            // section.size_of_raw_data = size_of_raw_data;
 
             if section.characteristics & SECTION_CHARACTERISTICS_TEXT != 0 {
                 text_size += section.size_of_raw_data;
@@ -691,17 +694,25 @@ pub fn build_import_directory(
     }
 }
 
-pub fn build_relocation_section() -> Vec<u8> {
-    let number_of_relocations = 2;
-    let size_of_block = mem::size_of::<ImageBaseRelocation>() as u32 + 2 * number_of_relocations;
-    [
-        ImageBaseRelocation {
-            virtual_address: BASE_OF_CODE,
-            size_of_block,
-        }
-        .as_vec(),
-        (((0x22) | 0xA0 << 8) as u16).to_le_bytes().to_vec(), //TODO: calculate offset to data
-        0_u16.to_le_bytes().to_vec(),
-    ]
-    .concat()
+pub fn build_relocation_section(
+    const_data: &BTreeMap<usize, DataRef>,
+    instructions: &Instructions,
+    data_section_virtual_address: u32,
+) -> Vec<u8> {
+    let number_of_relocations = (const_data.len() + 1) as u32;
+    let size_of_block = mem::size_of::<ImageBaseRelocation>() as u32
+        + mem::size_of::<u16>() as u32 * number_of_relocations;
+    let mut relocations = ImageBaseRelocation {
+        virtual_address: BASE_OF_CODE,
+        size_of_block,
+    }
+    .as_vec();
+    let mut data_cursor = 0;
+    for (line, data_ref) in const_data.iter() {
+        let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
+        relocations.extend(((ref_pos | 0xA0 << 8) as u16).to_le_bytes().to_vec());
+    }
+    relocations.extend(0_u16.to_le_bytes().to_vec());
+
+    relocations
 }

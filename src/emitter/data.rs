@@ -1,9 +1,19 @@
-use std::{collections::HashMap, ffi::CString};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ffi::CString,
+};
 
 use super::{
     ast::{self, AssignmentType},
     elf::sections::{DWord, DATA_SECTION_ADDRESS_START},
 };
+
+#[derive(Default, Debug)]
+pub struct DataRef {
+    pub offset: usize,
+    pub ref_len: usize,
+    pub data: Vec<u8>,
+}
 
 #[derive(Clone, Debug)]
 pub struct Data {
@@ -33,6 +43,7 @@ pub struct DataBuilder {
     pub variables: HashMap<ast::Ident, Data>,
     data_section: Vec<usize>,
     stack: Vec<usize>,
+    current_line: usize,
 }
 
 impl DataBuilder {
@@ -72,6 +83,7 @@ impl DataBuilder {
                 _ => todo!(),
             },
         }
+        self.current_line += 1;
     }
 
     // fn visit_assignment(&mut self, statement: &ast::Statement) {}

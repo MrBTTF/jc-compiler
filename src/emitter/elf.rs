@@ -4,9 +4,12 @@ pub mod sections;
 use std::{collections::HashMap, fs, io::Write};
 
 use self::{
-    super::{abi, amd64::*, ast, data::*, stdlib, structs::*},
+    super::{amd64::*, ast, data::*, structs::*},
     sections::*,
 };
+
+use super::abi::linux as abi;
+use super::stdlib::linux as stdlib;
 
 pub fn build_elf(ast: &ast::StatementList) {
     let mut data_builder = DataBuilder::default();

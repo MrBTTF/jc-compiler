@@ -297,6 +297,25 @@ impl Instruction for Push {}
 #[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
+pub struct PushExt {
+    rex: u8,
+    opcode: u8,
+}
+
+impl PushExt {
+    pub fn new(reg: RegisterExt) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_B,
+            opcode: 0x50 + reg as u8,
+        })
+    }
+}
+
+impl Instruction for PushExt {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
 pub struct Pop {
     opcode: u8,
 }
@@ -310,6 +329,25 @@ impl Pop {
 }
 
 impl Instruction for Pop {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct PopExt {
+    rex: u8,
+    opcode: u8,
+}
+
+impl PopExt {
+    pub fn new(reg: RegisterExt) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_B,
+            opcode: 0x58 + reg as u8,
+        })
+    }
+}
+
+impl Instruction for PopExt {}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -377,6 +415,48 @@ impl Instruction for Mov64rr {}
 #[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
+pub struct Mov64rExtr {
+    rex: u8,
+    opcode: u8,
+    mod_rm: u8,
+}
+
+impl Mov64rExtr {
+    pub fn new(dst: RegisterExt, src: Register) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_WRITE | REX_B,
+            opcode: 0x89,
+            mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
+        })
+    }
+}
+
+impl Instruction for Mov64rExtr {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Mov64rrExt {
+    rex: u8,
+    opcode: u8,
+    mod_rm: u8,
+}
+
+impl Mov64rrExt {
+    pub fn new(dst: Register, src: RegisterExt) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_WRITE | REX_READ,
+            opcode: 0x89,
+            mod_rm: 3 << 6 | (src as u8) << 3 | dst as u8,
+        })
+    }
+}
+
+impl Instruction for Mov64rrExt {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
 pub struct Sub64 {
     rex: u8,
     opcode: u8,
@@ -396,6 +476,29 @@ impl Sub64 {
 }
 
 impl Instruction for Sub64 {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Sub64Ext {
+    rex: u8,
+    opcode: u8,
+    mod_rm: u8,
+    value: i32,
+}
+
+impl Sub64Ext {
+    pub fn new(reg: RegisterExt, value: i32) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_WRITE | REX_B,
+            opcode: 0x81,
+            mod_rm: 3 << 6 | 5 << 3 | (reg as u8),
+            value,
+        })
+    }
+}
+
+impl Instruction for Sub64Ext {}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -475,7 +578,7 @@ impl Jmp {
     pub fn new(address: u32) -> Rc<Self> {
         Rc::new(Jmp {
             opcode: 0xFF,
-            mod_rm:  1 << 5 | 0b101,
+            mod_rm: 1 << 5 | 0b101,
             address,
         })
     }
