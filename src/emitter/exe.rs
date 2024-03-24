@@ -26,7 +26,7 @@ use super::{
     structs::{Instructions, InstructionsTrait, Sliceable},
 };
 
-pub fn build_exe(ast: &ast::StatementList) {
+pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let mut libs = BTreeMap::new();
     libs.insert(
         "KERNEL32.dll\0".as_bytes().to_vec(),
@@ -106,8 +106,11 @@ pub fn build_exe(ast: &ast::StatementList) {
     for data in const_data.values() {
         data_section_data.extend(data.data.to_owned());
     }
+    if data_section_data.is_empty() {
+        data_section_data.push(0);
+    }
 
-    let relocation_section_data = build_relocation_section(&const_data, &instructions, 0);
+    let relocation_section_data = build_relocation_section(&const_data, &instructions);
 
     let section_layout = SectionLayout::new(vec![
         Section::new(
@@ -143,8 +146,7 @@ pub fn build_exe(ast: &ast::StatementList) {
     let data_section = section_layout.get_section(".data");
     let relocation_section = section_layout.get_section(".reloc");
 
-    let relocation_section_data =
-        build_relocation_section(&const_data, &instructions, data_section.virtual_address);
+    let relocation_section_data = build_relocation_section(&const_data, &instructions);
 
     let import_directory_data =
         build_import_directory(import_directory_section.virtual_address, libs.clone());
@@ -162,7 +164,33 @@ pub fn build_exe(ast: &ast::StatementList) {
     for (line, data_ref) in const_data.iter() {
         let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
         let address = IMAGE_BASE as i64 + data_section.virtual_address as i64 + data_cursor as i64;
+        // println!("address: {:0x}", address);
         let address = address.to_le_bytes();
+        // println!("ref_pos: {:0x}", ref_pos);
+        // println!(
+        //     "text_section_data[0]: {:0x}",
+        //     text_section_data[ref_pos + 0]
+        // );
+        // println!(
+        //     "text_section_data[1]: {:0x}",
+        //     text_section_data[ref_pos + 1]
+        // );
+        // println!(
+        //     "text_section_data[2]: {:0x}",
+        //     text_section_data[ref_pos + 2]
+        // );
+        // println!(
+        //     "text_section_data[3]: {:0x}",
+        //     text_section_data[ref_pos + 3]
+        // );
+        // println!(
+        //     "text_section_data[4]: {:0x}",
+        //     text_section_data[ref_pos + 4]
+        // );
+        // println!(
+        //     "text_section_data[5]: {:0x}",
+        //     text_section_data[ref_pos + 5]
+        // );
         text_section_data[ref_pos..ref_pos + address.len()].copy_from_slice(&address);
         data_cursor += data_ref.data.len();
     }
@@ -180,7 +208,7 @@ pub fn build_exe(ast: &ast::StatementList) {
     ]
     .concat();
 
-    let mut file = fs::File::create("bin/hello.exe").unwrap();
+    let mut file = fs::File::create(output_path).unwrap();
     write_all_aligned(&mut file, &headers).unwrap();
     write_all_aligned(&mut file, &text_section_data).unwrap();
     write_all_aligned(&mut file, &import_directory_data.as_vec()).unwrap();
@@ -240,7 +268,10 @@ impl ExeEmitter {
     }
 
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Instructions {
-        let mut result: Instructions = vec![];
+        let mut result: Instructions = vec![
+            Push::new(Register::Bp),
+            Mov64rr::new(Register::Bp, Register::Sp),
+        ];
         result.extend(statement_list.0.iter().fold(vec![], |mut r, stmt| {
             r.extend(self.visit_statement(result.len() + r.len(), stmt));
             r
@@ -256,7 +287,7 @@ impl ExeEmitter {
             ast::Statement::Assignment(ast::Assignment(_, expr, ast::AssignmentType::Let)) => {
                 match expr {
                     ast::Expression::Literal(ast::Literal::String(s)) => {
-                        let pushes: Vec<_> = s.as_bytes().chunks(8).rev().fold(
+                        let mut pushes: Vec<_> = s.as_bytes().chunks(8).rev().fold(
                             vec![],
                             |mut acc: Instructions, substr| {
                                 let mut value: u64 = 0;
@@ -268,6 +299,10 @@ impl ExeEmitter {
                                 acc
                             },
                         );
+                        dbg!(pushes.len());
+                        if pushes.len() % 4 != 0 {
+                            pushes.push(Push::new(Register::Ax));
+                        }
                         pushes
                     }
                     ast::Expression::Literal(ast::Literal::Number(n)) => {
@@ -305,23 +340,26 @@ impl ExeEmitter {
 
             let mut result = vec![];
             result.extend(abi::push_args(args));
-            let mut pc: usize = pc + result.len() - 1;
-            self.data_refs.insert(
-                pc,
-                DataRef {
-                    offset: 2,
-                    ref_len: mem::size_of::<i64>(),
-                    data: match &data.lit {
-                        ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-                        ast::Literal::Number(_) => unimplemented!(),
+            let pc: usize = pc + result.len();
+            if data.assign_type == ast::AssignmentType::Const {
+                self.data_refs.insert(
+                    pc - 1,
+                    DataRef {
+                        offset: 2,
+                        ref_len: mem::size_of::<i64>(),
+                        data: match &data.lit {
+                            ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
+                            ast::Literal::Number(_) => b"%d\0".to_vec(),
+                        },
                     },
-                },
-            );
-            pc += 1;
+                );
+            }
 
             let print_call = match data.lit {
                 ast::Literal::String(_) => stdlib::print(&mut self.calls, pc),
-                ast::Literal::Number(_) => stdlib::printd(),
+                ast::Literal::Number(n) => {
+                    stdlib::printd(&mut self.calls, &mut self.data_refs, n.value, pc)
+                }
             };
 
             result.extend(print_call);

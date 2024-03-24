@@ -12,7 +12,7 @@ const REX_READ: u8 = 0b01000100;
 const REX_X: u8 = 0b01000010;
 const REX_B: u8 = 0b01000001;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Register {
     Ax = 0x0,
@@ -373,6 +373,27 @@ impl Instruction for Mov64 {}
 #[derive(Debug)]
 #[allow(dead_code)]
 #[repr(packed)]
+pub struct Mov64Long {
+    rex: u8,
+    opcode: u8,
+    value: i64,
+}
+
+impl Mov64Long {
+    pub fn new(reg: Register, value: i64) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_WRITE,
+            opcode: 0xB8 + reg as u8,
+            value,
+        })
+    }
+}
+
+impl Instruction for Mov64Long {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
 pub struct Mov64Ext {
     rex: u8,
     opcode: u8,
@@ -453,6 +474,29 @@ impl Mov64rrExt {
 }
 
 impl Instruction for Mov64rrExt {}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+#[repr(packed)]
+pub struct Add64 {
+    rex: u8,
+    opcode: u8,
+    mod_rm: u8,
+    value: i32,
+}
+
+impl Add64 {
+    pub fn new(reg: Register, value: i32) -> Rc<Self> {
+        Rc::new(Self {
+            rex: REX_WRITE,
+            opcode: 0x81,
+            mod_rm: 3 << 6 | 0 << 3 | (reg as u8),
+            value,
+        })
+    }
+}
+
+impl Instruction for Add64 {}
 
 #[derive(Debug)]
 #[allow(dead_code)]

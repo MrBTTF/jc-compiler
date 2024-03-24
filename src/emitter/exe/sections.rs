@@ -697,7 +697,6 @@ pub fn build_import_directory(
 pub fn build_relocation_section(
     const_data: &BTreeMap<usize, DataRef>,
     instructions: &Instructions,
-    data_section_virtual_address: u32,
 ) -> Vec<u8> {
     let number_of_relocations = (const_data.len() + 1) as u32;
     let size_of_block = mem::size_of::<ImageBaseRelocation>() as u32
@@ -707,7 +706,6 @@ pub fn build_relocation_section(
         size_of_block,
     }
     .as_vec();
-    let mut data_cursor = 0;
     for (line, data_ref) in const_data.iter() {
         let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
         relocations.extend(((ref_pos | 0xA0 << 8) as u16).to_le_bytes().to_vec());
