@@ -6,3 +6,4 @@ pub mod elf;
 pub mod exe;
 pub mod stdlib;
 pub mod structs;
+mod mnemonics;

@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    ffi::CString,
-};
+use std::{collections::HashMap, ffi::CString};
 
 use super::{
     ast::{self, AssignmentType},

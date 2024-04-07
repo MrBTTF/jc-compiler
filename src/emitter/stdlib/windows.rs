@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, mem};
 
-use crate::emitter::{amd64::*, data::DataRef, structs::Instructions};
+use crate::emitter::{data::DataRef, mnemonics::*, structs::Instructions};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Io {
@@ -14,7 +14,11 @@ fn _get_io_handle(
     calls: &mut BTreeMap<usize, String>,
     mut pc: usize,
 ) -> Instructions {
-    let result: Instructions = vec![Mov32::new(Register::Cx, io_handle as i32), Call::new(0x0)];
+    let result: Instructions = vec![
+        MOV.op1(Operand::Register(register::ECX))
+            .op2(Operand::Imm32(io_handle as u32)),
+        CALL.op1(Operand::Offset32(0)),
+    ];
     pc += result.len() - 1;
     calls.insert(pc, "__acrt_iob_func".to_string());
     result
@@ -22,16 +26,23 @@ fn _get_io_handle(
 
 fn _print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
     let stdio_common_vfprintf: Instructions = vec![
-        Mov64rr::new(Register::Bx, Register::Ax),
-        Mov32::new(Register::Cx, 0x0),
-        Mov64rr::new(Register::Dx, Register::Bx),
-        Mov32Ext::new(RegisterExt::R9, 0x0),
-        Push::new(Register::Bp),
-        Mov64rr::new(Register::Bp, Register::Sp),
-        Sub64::new(Register::Sp, 48),
-        Call::new(0x0),
-        Add64::new(Register::Sp, 48),
-        Pop::new(Register::Bp),
+        MOV.op1(Operand::Register(register::RBX))
+            .op2(Operand::Register(register::RAX)),
+        MOV.op1(Operand::Register(register::RCX))
+            .op2(Operand::Imm64(0)),
+        MOV.op1(Operand::Register(register::RDX))
+            .op2(Operand::Register(register::RBX)),
+        MOV.op1(Operand::Register(register::R9))
+            .op2(Operand::Imm64(0)),
+        PUSH.op1(Operand::Register(register::RBP)),
+        MOV.op1(Operand::Register(register::RBP))
+            .op2(Operand::Register(register::RSP)),
+        SUB.op1(Operand::Register(register::RSP))
+            .op2(Operand::Imm32(48)),
+        CALL.op1(Operand::Offset32(0)),
+        ADD.op1(Operand::Register(register::RSP))
+            .op2(Operand::Imm32(48)),
+        POP.op1(Operand::Register(register::RBP)),
     ];
     pc += stdio_common_vfprintf.len() - 1 - 2;
     calls.insert(pc, "__stdio_common_vfprintf".to_string());
@@ -39,7 +50,9 @@ fn _print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
 }
 
 pub fn print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
-    let prelude: Instructions = vec![Mov64rExtr::new(RegisterExt::R8, Register::Cx)];
+    let prelude: Instructions = vec![MOV
+        .op1(Operand::Register(register::R8))
+        .op2(Operand::Register(register::RCX))];
     pc += prelude.len();
     let _get_io_handle_code = _get_io_handle(Io::Stdout, calls, pc);
     pc += _get_io_handle_code.len();
@@ -54,14 +67,21 @@ fn _printd(
     mut pc: usize,
 ) -> Instructions {
     let stdio_common_vfprintf_1: Instructions = vec![
-        Mov64rr::new(Register::Bx, Register::Ax),
-        Mov32::new(Register::Cx, 0x0),
-        Mov64rr::new(Register::Dx, Register::Bx),
-        Mov32Ext::new(RegisterExt::R9, 0x0),
-        Push::new(Register::Bp),
-        Mov64rr::new(Register::Bp, Register::Sp),
-        Sub64::new(Register::Sp, 8),
-        Mov64Long::new(Register::Ax, 0),
+        MOV.op1(Operand::Register(register::RBX))
+            .op2(Operand::Register(register::RAX)),
+        MOV.op1(Operand::Register(register::RCX))
+            .op2(Operand::Imm64(0)),
+        MOV.op1(Operand::Register(register::RDX))
+            .op2(Operand::Register(register::RBX)),
+        MOV.op1(Operand::Register(register::R9))
+            .op2(Operand::Imm64(0)),
+        PUSH.op1(Operand::Register(register::RBP)),
+        MOV.op1(Operand::Register(register::RBP))
+            .op2(Operand::Register(register::RSP)),
+        SUB.op1(Operand::Register(register::RSP))
+            .op2(Operand::Imm32(8)),
+        MOV.op1(Operand::Register(register::RAX))
+            .op2(Operand::Imm64(0)),
     ];
     pc += stdio_common_vfprintf_1.len() - 1;
     data_refs.insert(
@@ -73,11 +93,13 @@ fn _printd(
         },
     );
     let stdio_common_vfprintf_2: Instructions = vec![
-        Push::new(Register::Ax),
-        Sub64::new(Register::Sp, 32),
-        Call::new(0x0),
-        Add64::new(Register::Sp, 48),
-        Pop::new(Register::Bp),
+        PUSH.op1(Operand::Register(register::RAX)),
+        SUB.op1(Operand::Register(register::RSP))
+            .op2(Operand::Imm32(32)),
+        CALL.op1(Operand::Offset32(0)),
+        ADD.op1(Operand::Register(register::RSP))
+            .op2(Operand::Imm32(48)),
+        POP.op1(Operand::Register(register::RBP)),
     ];
     pc += stdio_common_vfprintf_2.len() - 1 - 1;
     calls.insert(pc, "__stdio_common_vfprintf".to_string());
@@ -90,7 +112,9 @@ pub fn printd(
     number: i64,
     mut pc: usize,
 ) -> Instructions {
-    let prelude: Instructions = vec![Mov64rExtr::new(RegisterExt::R8, Register::Cx)];
+    let prelude: Instructions = vec![MOV
+        .op1(Operand::Register(register::R8))
+        .op2(Operand::Register(register::RCX))];
     pc += prelude.len();
     let _get_io_handle_code = _get_io_handle(Io::Stdout, calls, pc);
     pc += _get_io_handle_code.len();
@@ -99,7 +123,11 @@ pub fn printd(
 }
 
 pub fn exit(exit_code: i64, calls: &mut BTreeMap<usize, String>, pc: usize) -> Instructions {
-    let result: Instructions = vec![Mov64::new(Register::Ax, exit_code), Call::new(0x0)];
+    let result: Instructions = vec![
+        MOV.op1(Operand::Register(register::RAX))
+            .op2(Operand::Imm64(exit_code as u64)),
+        CALL.op1(Operand::Offset32(0)),
+    ];
     calls.insert(pc + result.len() - 1, "ExitProcess".to_string());
     result
 }

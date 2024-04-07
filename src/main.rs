@@ -4,7 +4,7 @@ use emitter::ast::Visitor;
 
 use parser::ast_printer::AstPrinter;
 
-use crate::emitter::{elf::build_elf, exe::build_exe};
+use crate::emitter::exe::build_exe;
 
 mod emitter;
 mod lexer;

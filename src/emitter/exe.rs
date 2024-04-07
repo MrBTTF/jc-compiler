@@ -20,11 +20,13 @@ use crate::emitter::abi::windows as abi;
 use self::defs::*;
 
 use super::{
-    amd64::*,
     ast,
     data::{Data, DataBuilder},
+    mnemonics::*,
     structs::{Instructions, InstructionsTrait, Sliceable},
 };
+
+const SIZE_OF_JMP: usize = mem::size_of::<u8>() * 2 + mem::size_of::<u32>();
 
 pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let mut libs = BTreeMap::new();
@@ -57,7 +59,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let mut exe_emitter = ExeEmitter::new(&data_builder);
 
     let mut instructions = exe_emitter.visit_statement_list(ast);
-    dbg!(&instructions);
+    // dbg!(&instructions);
 
     let created_at = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -115,7 +117,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let section_layout = SectionLayout::new(vec![
         Section::new(
             ".text".to_string(),
-            (text_section_data.len() + mem::size_of::<Jmp>() * calls.len()) as u32,
+            (text_section_data.len() + SIZE_OF_JMP * calls.len()) as u32,
             SECTION_CHARACTERISTICS_TEXT
                 | SECTION_CHARACTERISTICS_EXEC
                 | SECTION_CHARACTERISTICS_READ,
@@ -164,7 +166,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     for (line, data_ref) in const_data.iter() {
         let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
         let address = IMAGE_BASE as i64 + data_section.virtual_address as i64 + data_cursor as i64;
-        // println!("address: {:0x}", address);
+        println!("address: {:0x}", address);
         let address = address.to_le_bytes();
         // println!("ref_pos: {:0x}", ref_pos);
         // println!(
@@ -231,14 +233,13 @@ fn compute_calls(
     for (i, (c, call)) in calls.iter().enumerate() {
         let mut address = external_symbols[call];
         // println!("{}: {:0x}", call, address);
-        address -= virtual_address
-            + text_section_data.len() as u32
-            + ((i + 1) * mem::size_of::<Jmp>()) as u32;
+        address -=
+            virtual_address + text_section_data.len() as u32 + ((i + 1) * SIZE_OF_JMP) as u32;
         // println!("{}: {:0x}", call, address);
-        instructions.push(Jmp::new(address));
+        instructions.push(JMP.op1(Operand::Imm32(address)));
         let call_address = text_section_data.len() as u32
             - instructions[..*c + 1].to_vec().to_bin().len() as u32
-            + ((i) * mem::size_of::<Jmp>()) as u32;
+            + ((i) * SIZE_OF_JMP) as u32;
         // println!(
         //     "{:0x}: {:0x}",
         //     text_section_data.len(),
@@ -246,8 +247,7 @@ fn compute_calls(
         // );
         // println!("{}: {:0x}", call, call_address);
 
-        let call_instruction = instructions[*c].borrow_mut();
-        *call_instruction = Call::new(call_address as u16);
+        instructions[*c].set_op1(Operand::Offset32(call_address));
     }
     instructions
 }
@@ -269,8 +269,9 @@ impl ExeEmitter {
 
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Instructions {
         let mut result: Instructions = vec![
-            Push::new(Register::Bp),
-            Mov64rr::new(Register::Bp, Register::Sp),
+            PUSH.op1(Operand::Register(register::RBP)),
+            MOV.op1(Operand::Register(register::RBP))
+                .op2(Operand::Register(register::RSP)),
         ];
         result.extend(statement_list.0.iter().fold(vec![], |mut r, stmt| {
             r.extend(self.visit_statement(result.len() + r.len(), stmt));
@@ -294,19 +295,26 @@ impl ExeEmitter {
                                 for (i, c) in substr.iter().enumerate() {
                                     value += (*c as u64) << (8 * i)
                                 }
-                                acc.push(Mov64::new(Register::Ax, value as i64));
-                                acc.push(Push::new(Register::Ax));
+                                acc.push(
+                                    MOV.op1(Operand::Register(register::RAX))
+                                        .op2(Operand::Imm64(value)),
+                                );
+                                acc.push(PUSH.op1(Operand::Register(register::RAX)));
                                 acc
                             },
                         );
                         dbg!(pushes.len());
                         if pushes.len() % 4 != 0 {
-                            pushes.push(Push::new(Register::Ax));
+                            pushes.push(PUSH.op1(Operand::Register(register::RAX)));
                         }
                         pushes
                     }
                     ast::Expression::Literal(ast::Literal::Number(n)) => {
-                        vec![Mov64::new(Register::Ax, n.value), Push::new(Register::Ax)]
+                        vec![
+                            MOV.op1(Operand::Register(register::RAX))
+                                .op1(Operand::Imm64(n.value as u64)),
+                            PUSH.op1(Operand::Register(register::RAX)),
+                        ]
                     }
                     _ => vec![],
                 }
