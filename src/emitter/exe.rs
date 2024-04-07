@@ -75,15 +75,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     dbg!(&calls);
 
     let const_data = exe_emitter.data_refs;
-    // const_data.insert(
-    //     8,
-    //     DataRef {
-    //         offset: 0x2,
-    //         ref_len: mem::size_of::<i64>(),
-    //         data: "Hello world\r\n\0".as_bytes().to_vec(),
-    //     },
-    // );
-    // dbg!(&const_data);
+    dbg!(&const_data);
 
     // let mut instructions: Instructions = vec![
     //     Push::new(Register::Bp),
@@ -353,7 +345,7 @@ impl ExeEmitter {
                 self.data_refs.insert(
                     pc - 1,
                     DataRef {
-                        offset: 2,
+                        offset: result.last().unwrap().get_value_loc(),
                         ref_len: mem::size_of::<i64>(),
                         data: match &data.lit {
                             ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),

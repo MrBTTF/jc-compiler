@@ -87,7 +87,7 @@ fn _printd(
     data_refs.insert(
         pc,
         DataRef {
-            offset: 2,
+            offset: stdio_common_vfprintf_1.last().unwrap().get_value_loc(),
             ref_len: mem::size_of::<i64>(),
             data: number.to_le_bytes().to_vec(),
         },

@@ -220,6 +220,12 @@ impl Mnemonic {
         self.op1 = op;
     }
 
+    pub fn get_value_loc(&self) -> usize {
+        let mut cloned = self.clone();
+        cloned.as_vec();
+        cloned.value_loc
+    }
+
     pub fn opcode(&self, opcode: u8, operands: OperandEncoding) -> Self {
         let mut cloned = self.clone();
         cloned.opcodes.insert(operands, opcode);
