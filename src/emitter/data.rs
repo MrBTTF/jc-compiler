@@ -8,7 +8,6 @@ use super::{
 #[derive(Default, Debug)]
 pub struct DataRef {
     pub offset: usize,
-    pub ref_len: usize,
     pub data: Vec<u8>,
 }
 

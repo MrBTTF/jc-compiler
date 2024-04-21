@@ -327,7 +327,6 @@ impl ExeEmitter {
                     pc - offset,
                     DataRef {
                         offset: result[result.len() - offset].get_value_loc(),
-                        ref_len: mem::size_of::<i64>(),
                         data: match &data.lit {
                             ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
                             ast::Literal::Number(_) => b"%d\0".to_vec(),

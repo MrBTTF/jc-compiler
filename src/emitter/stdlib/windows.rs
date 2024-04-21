@@ -79,7 +79,6 @@ fn _printd(
         pc,
         DataRef {
             offset: stdio_common_vfprintf_1.last().unwrap().get_value_loc(),
-            ref_len: mem::size_of::<i64>(),
             data: number.to_le_bytes().to_vec(),
         },
     );
