@@ -152,55 +152,16 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
         calls,
         external_symbols,
     );
-    let mut text_section_data: Vec<u8> = instructions.to_bin();
 
     let mut data_cursor = 0;
     for (line, data_ref) in const_data.iter() {
-        let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
         let address = IMAGE_BASE + data_section.virtual_address as u64 + data_cursor as u64;
         println!("address: {:0x}", address);
-        // dbg!(&instructions[*line]);
-        let address = address.to_le_bytes();
-        // println!("ref_pos: {:0x}", ref_pos);
-        // println!(
-        //     "text_section_data[0]: {:0x}",
-        //     text_section_data[ref_pos - 3]
-        // );
-        // println!(
-        //     "text_section_data[0]: {:0x}",
-        //     text_section_data[ref_pos - 2]
-        // );
-        // println!(
-        //     "text_section_data[0]: {:0x}",
-        //     text_section_data[ref_pos - 1]
-        // );
-        // println!(
-        //     "text_section_data[0]: {:0x}",
-        //     text_section_data[ref_pos + 0]
-        // );
-        // println!(
-        //     "text_section_data[1]: {:0x}",
-        //     text_section_data[ref_pos + 1]
-        // );
-        // println!(
-        //     "text_section_data[2]: {:0x}",
-        //     text_section_data[ref_pos + 2]
-        // );
-        // println!(
-        //     "text_section_data[3]: {:0x}",
-        //     text_section_data[ref_pos + 3]
-        // );
-        // println!(
-        //     "text_section_data[4]: {:0x}",
-        //     text_section_data[ref_pos + 4]
-        // );
-        // println!(
-        //     "text_section_data[5]: {:0x}",
-        //     text_section_data[ref_pos + 5]
-        // );
-        text_section_data[ref_pos..ref_pos + address.len()].copy_from_slice(&address);
+        instructions[*line].set_op2(Operand::Imm64(address));
         data_cursor += data_ref.data.len();
     }
+
+    let text_section_data: Vec<u8> = instructions.to_bin();
 
     let dos_header = build_dos_header();
     let nt_header = build_nt_header(created_at, section_layout);

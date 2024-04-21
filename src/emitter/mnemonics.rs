@@ -220,6 +220,10 @@ impl Mnemonic {
         self.op1 = op;
     }
 
+    pub fn set_op2(&mut self, op: Operand) {
+        self.op2 = op;
+    }
+
     pub fn get_value_loc(&self) -> usize {
         let mut cloned = self.clone();
         cloned.as_vec();
