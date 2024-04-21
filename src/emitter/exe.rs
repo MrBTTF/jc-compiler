@@ -157,10 +157,23 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let mut data_cursor = 0;
     for (line, data_ref) in const_data.iter() {
         let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
-        let address = IMAGE_BASE as i64 + data_section.virtual_address as i64 + data_cursor as i64;
+        let address = IMAGE_BASE + data_section.virtual_address as u64 + data_cursor as u64;
         println!("address: {:0x}", address);
+        // dbg!(&instructions[*line]);
         let address = address.to_le_bytes();
         // println!("ref_pos: {:0x}", ref_pos);
+        // println!(
+        //     "text_section_data[0]: {:0x}",
+        //     text_section_data[ref_pos - 3]
+        // );
+        // println!(
+        //     "text_section_data[0]: {:0x}",
+        //     text_section_data[ref_pos - 2]
+        // );
+        // println!(
+        //     "text_section_data[0]: {:0x}",
+        //     text_section_data[ref_pos - 1]
+        // );
         // println!(
         //     "text_section_data[0]: {:0x}",
         //     text_section_data[ref_pos + 0]
@@ -297,7 +310,10 @@ impl ExeEmitter {
                         );
                         dbg!(pushes.len());
                         if pushes.len() % 4 != 0 {
-                            pushes.push(PUSH.op1(Operand::Register(register::RAX)));
+                            pushes.push(
+                                SUB.op1(Operand::Register(register::RSP))
+                                    .op2(Operand::Imm32(8)),
+                            );
                         }
                         pushes
                     }
@@ -342,10 +358,14 @@ impl ExeEmitter {
             result.extend(abi::push_args(args));
             let pc: usize = pc + result.len();
             if data.assign_type == ast::AssignmentType::Const {
+                let mut offset = 1;
+                if args.len() % 2 != 0 {
+                    offset += 1;
+                }
                 self.data_refs.insert(
-                    pc - 1,
+                    pc - offset,
                     DataRef {
-                        offset: result.last().unwrap().get_value_loc(),
+                        offset: result[result.len() - offset].get_value_loc(),
                         ref_len: mem::size_of::<i64>(),
                         data: match &data.lit {
                             ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),

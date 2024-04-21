@@ -34,17 +34,13 @@ fn _print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
             .op2(Operand::Register(register::RBX)),
         MOV.op1(Operand::Register(register::R9))
             .op2(Operand::Imm64(0)),
-        PUSH.op1(Operand::Register(register::RBP)),
-        MOV.op1(Operand::Register(register::RBP))
-            .op2(Operand::Register(register::RSP)),
         SUB.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(48)),
+            .op2(Operand::Imm32(32)),
         CALL.op1(Operand::Offset32(0)),
         ADD.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(48)),
-        POP.op1(Operand::Register(register::RBP)),
+            .op2(Operand::Imm32(32)),
     ];
-    pc += stdio_common_vfprintf.len() - 1 - 2;
+    pc += stdio_common_vfprintf.len() - 1 - 1;
     calls.insert(pc, "__stdio_common_vfprintf".to_string());
     stdio_common_vfprintf
 }
@@ -75,11 +71,6 @@ fn _printd(
             .op2(Operand::Register(register::RBX)),
         MOV.op1(Operand::Register(register::R9))
             .op2(Operand::Imm64(0)),
-        PUSH.op1(Operand::Register(register::RBP)),
-        MOV.op1(Operand::Register(register::RBP))
-            .op2(Operand::Register(register::RSP)),
-        SUB.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(8)),
         MOV.op1(Operand::Register(register::RAX))
             .op2(Operand::Imm64(0)),
     ];
@@ -93,15 +84,16 @@ fn _printd(
         },
     );
     let stdio_common_vfprintf_2: Instructions = vec![
+        SUB.op1(Operand::Register(register::RSP))
+            .op2(Operand::Imm32(8)),
         PUSH.op1(Operand::Register(register::RAX)),
         SUB.op1(Operand::Register(register::RSP))
             .op2(Operand::Imm32(32)),
         CALL.op1(Operand::Offset32(0)),
         ADD.op1(Operand::Register(register::RSP))
             .op2(Operand::Imm32(48)),
-        POP.op1(Operand::Register(register::RBP)),
     ];
-    pc += stdio_common_vfprintf_2.len() - 1 - 1;
+    pc += stdio_common_vfprintf_2.len() - 1;
     calls.insert(pc, "__stdio_common_vfprintf".to_string());
     [stdio_common_vfprintf_1, stdio_common_vfprintf_2].concat()
 }
