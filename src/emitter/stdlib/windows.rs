@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, mem};
 
-use crate::emitter::{data::DataRef, mnemonics::*, structs::Instructions};
+use crate::emitter::{
+    abi::windows::ARG_REGISTERS, data::DataRef, mnemonics::*, structs::Instructions,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Io {
@@ -15,23 +17,21 @@ fn _get_io_handle(
     mut pc: usize,
 ) -> Instructions {
     let result: Instructions = vec![
-        MOV.op1(Operand::Register(register::ECX))
-            .op2(Operand::Imm32(io_handle as u32)),
+        MOV.op1(Operand::Register(ARG_REGISTERS[0]))
+            .op2(Operand::Imm64(io_handle as u64)),
         CALL.op1(Operand::Offset32(0)),
+        MOV.op1(Operand::Register(register::RDX))
+            .op2(Operand::Register(register::RAX)),
     ];
-    pc += result.len() - 1;
+    pc += result.len() - 2;
     calls.insert(pc, "__acrt_iob_func".to_string());
     result
 }
 
 fn _print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
     let stdio_common_vfprintf: Instructions = vec![
-        MOV.op1(Operand::Register(register::RBX))
-            .op2(Operand::Register(register::RAX)),
         MOV.op1(Operand::Register(register::RCX))
             .op2(Operand::Imm64(0)),
-        MOV.op1(Operand::Register(register::RDX))
-            .op2(Operand::Register(register::RBX)),
         MOV.op1(Operand::Register(register::R9))
             .op2(Operand::Imm64(0)),
         SUB.op1(Operand::Register(register::RSP))
@@ -48,7 +48,7 @@ fn _print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
 pub fn print(calls: &mut BTreeMap<usize, String>, mut pc: usize) -> Instructions {
     let prelude: Instructions = vec![MOV
         .op1(Operand::Register(register::R8))
-        .op2(Operand::Register(register::RCX))];
+        .op2(Operand::Register(ARG_REGISTERS[0]))];
     pc += prelude.len();
     let _get_io_handle_code = _get_io_handle(Io::Stdout, calls, pc);
     pc += _get_io_handle_code.len();
@@ -63,12 +63,8 @@ fn _printd(
     mut pc: usize,
 ) -> Instructions {
     let stdio_common_vfprintf_1: Instructions = vec![
-        MOV.op1(Operand::Register(register::RBX))
-            .op2(Operand::Register(register::RAX)),
         MOV.op1(Operand::Register(register::RCX))
             .op2(Operand::Imm64(0)),
-        MOV.op1(Operand::Register(register::RDX))
-            .op2(Operand::Register(register::RBX)),
         MOV.op1(Operand::Register(register::R9))
             .op2(Operand::Imm64(0)),
         MOV.op1(Operand::Register(register::RAX))
@@ -105,7 +101,7 @@ pub fn printd(
 ) -> Instructions {
     let prelude: Instructions = vec![MOV
         .op1(Operand::Register(register::R8))
-        .op2(Operand::Register(register::RCX))];
+        .op2(Operand::Register(ARG_REGISTERS[0]))];
     pc += prelude.len();
     let _get_io_handle_code = _get_io_handle(Io::Stdout, calls, pc);
     pc += _get_io_handle_code.len();

@@ -62,7 +62,7 @@ impl Literal {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, PartialOrd, Ord)]
 pub struct Ident {
     pub value: String,
 }

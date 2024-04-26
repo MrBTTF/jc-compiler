@@ -8,7 +8,7 @@ pub enum Arg {
     Stack(i64),
 }
 
-const ARG_REGISTERS: &[register::Register] =
+pub const ARG_REGISTERS: &[register::Register] =
     &[register::RCX, register::RDX, register::R8, register::R9];
 
 pub fn push_args(args: &[Arg]) -> Instructions {

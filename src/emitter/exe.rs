@@ -2,19 +2,14 @@ mod defs;
 mod sections;
 
 use std::{
-    borrow::BorrowMut,
-    collections::{BTreeMap, HashMap},
-    fs,
-    io::Write,
-    mem,
-    time::SystemTime,
+    borrow::BorrowMut, collections::{BTreeMap, HashMap}, fs, io::Write, mem, result, time::SystemTime
 };
 
 use sections::*;
 
 use crate::emitter::data::DataRef;
 
-use super::stdlib::windows as stdlib;
+use super::{ast::AssignmentType, stdlib::windows as stdlib};
 use crate::emitter::abi::windows as abi;
 
 use self::defs::*;
@@ -219,7 +214,7 @@ fn compute_calls(
 }
 
 pub struct ExeEmitter {
-    literals: HashMap<ast::Ident, Data>,
+    literals: BTreeMap<ast::Ident, Data>,
     calls: BTreeMap<usize, String>,
     data_refs: BTreeMap<usize, DataRef>,
 }
@@ -239,6 +234,7 @@ impl ExeEmitter {
             MOV.op1(Operand::Register(register::RBP))
                 .op2(Operand::Register(register::RSP)),
         ];
+        result.extend(allocate_stack(&self.literals));
         result.extend(statement_list.0.iter().fold(vec![], |mut r, stmt| {
             r.extend(self.visit_statement(result.len() + r.len(), stmt));
             r
@@ -251,51 +247,13 @@ impl ExeEmitter {
         // println!("{}: {:#?}", statement_n, &statement);
         match statement {
             ast::Statement::Expression(expr) => self.visit_expression(pc, expr),
-            ast::Statement::Assignment(ast::Assignment(_, expr, ast::AssignmentType::Let)) => {
-                match expr {
-                    ast::Expression::Literal(ast::Literal::String(s)) => {
-                        let mut pushes: Vec<_> = s.as_bytes().chunks(8).rev().fold(
-                            vec![],
-                            |mut acc: Instructions, substr| {
-                                let mut value: u64 = 0;
-                                for (i, c) in substr.iter().enumerate() {
-                                    value += (*c as u64) << (8 * i)
-                                }
-                                acc.push(
-                                    MOV.op1(Operand::Register(register::RAX))
-                                        .op2(Operand::Imm64(value)),
-                                );
-                                acc.push(PUSH.op1(Operand::Register(register::RAX)));
-                                acc
-                            },
-                        );
-                        dbg!(pushes.len());
-                        if pushes.len() % 4 != 0 {
-                            pushes.push(
-                                SUB.op1(Operand::Register(register::RSP))
-                                    .op2(Operand::Imm32(8)),
-                            );
-                        }
-                        pushes
-                    }
-                    ast::Expression::Literal(ast::Literal::Number(n)) => {
-                        vec![
-                            MOV.op1(Operand::Register(register::RAX))
-                                .op1(Operand::Imm64(n.value as u64)),
-                            PUSH.op1(Operand::Register(register::RAX)),
-                        ]
-                    }
-                    _ => vec![],
-                }
-            }
-            ast::Statement::Assignment(ast::Assignment(_, _, ast::AssignmentType::Const)) => vec![],
+            ast::Statement::Assignment(_) => vec![],
         }
     }
 
     fn visit_expression(&mut self, pc: usize, expr: &ast::Expression) -> Instructions {
         match expr {
             ast::Expression::Call(id, expr) => self.visit_call(pc, id, expr),
-
             _ => vec![],
         }
     }
@@ -349,4 +307,50 @@ impl ExeEmitter {
 
         panic!("no such function {}", id.value)
     }
+}
+
+fn allocate_stack(literals: &BTreeMap<ast::Ident, Data>) -> Vec<Mnemonic> {
+    let mut result = vec![];
+    for (_, data) in literals.iter() {
+        if data.assign_type == AssignmentType::Const {
+            continue;
+        }
+        result.extend(match data.assign_type {
+            AssignmentType::Let => match &data.lit {
+                ast::Literal::String(s) => push_string_on_stack(s),
+                ast::Literal::Number(n) => vec![
+                    MOV.op1(Operand::Register(register::RAX))
+                        .op1(Operand::Imm64(n.value as u64)),
+                    PUSH.op1(Operand::Register(register::RAX)),
+                ],
+            },
+            AssignmentType::Const => vec![],
+        });
+    }
+
+    if result.len() % 4 != 0 {
+        result.push(
+            SUB.op1(Operand::Register(register::RSP))
+                .op2(Operand::Imm32(8)),
+        );
+    }
+    result
+}
+
+fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
+    s.as_bytes()
+        .chunks(8)
+        .rev()
+        .fold(vec![], |mut acc: Instructions, substr| {
+            let mut value: u64 = 0;
+            for (i, c) in substr.iter().enumerate() {
+                value += (*c as u64) << (8 * i)
+            }
+            acc.push(
+                MOV.op1(Operand::Register(register::RAX))
+                    .op2(Operand::Imm64(value)),
+            );
+            acc.push(PUSH.op1(Operand::Register(register::RAX)));
+            acc
+        })
 }

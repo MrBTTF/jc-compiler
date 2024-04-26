@@ -1,4 +1,7 @@
-use std::{collections::HashMap, ffi::CString};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ffi::CString,
+};
 
 use super::{
     ast::{self, AssignmentType},
@@ -36,7 +39,7 @@ impl Data {
 
 #[derive(Default, Debug)]
 pub struct DataBuilder {
-    pub variables: HashMap<ast::Ident, Data>,
+    pub variables: BTreeMap<ast::Ident, Data>,
     data_section: Vec<usize>,
     stack: Vec<usize>,
     current_line: usize,
