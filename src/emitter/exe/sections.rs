@@ -5,7 +5,7 @@ use std::{
 
 use crate::emitter::{
     data::DataRef,
-    structs::{Instructions, InstructionsTrait, Sliceable},
+    structs::{CodeContext, Sliceable},
 };
 
 use super::defs::*;
@@ -696,7 +696,7 @@ pub fn build_import_directory(
 
 pub fn build_relocation_section(
     const_data: &BTreeMap<usize, DataRef>,
-    instructions: &Instructions,
+    code_context: &CodeContext,
 ) -> Vec<u8> {
     let number_of_relocations = (const_data.len() + 1) as u32;
     let size_of_block = mem::size_of::<ImageBaseRelocation>() as u32
@@ -707,7 +707,7 @@ pub fn build_relocation_section(
     }
     .as_vec();
     for (line, data_ref) in const_data.iter() {
-        let ref_pos = instructions[..*line].to_vec().to_bin().len() + data_ref.offset;
+        let ref_pos = code_context.get_offset(*line) + data_ref.offset;
         relocations.extend(((ref_pos | 0xA0 << 8) as u16).to_le_bytes().to_vec());
     }
     relocations.extend(0_u16.to_le_bytes().to_vec());

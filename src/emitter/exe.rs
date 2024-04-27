@@ -23,7 +23,7 @@ use super::{
     ast,
     data::{Data, DataBuilder},
     mnemonics::*,
-    structs::{Instructions, InstructionsTrait, Sliceable},
+    structs::{CodeContext, Sliceable},
 };
 
 const SIZE_OF_JMP: usize = mem::size_of::<u8>() * 2 + mem::size_of::<u32>();
@@ -58,15 +58,16 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
 
     let mut exe_emitter = ExeEmitter::new(&data_builder);
 
-    let mut instructions = exe_emitter.visit_statement_list(ast);
-    // dbg!(&instructions);
+    exe_emitter.visit_statement_list(ast);
+    let mut code_context = exe_emitter.get_code_context();
+    // dbg!(&code_context);
 
     let created_at = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs() as u32;
 
-    let calls = exe_emitter.calls;
+    let calls = code_context.get_calls();
     // let mut calls = BTreeMap::new();
     // calls.insert(4, "__acrt_iob_func".to_string());
     // calls.insert(10, "__stdio_common_vfprintf".to_string());
@@ -77,7 +78,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let const_data = exe_emitter.data_refs;
     dbg!(&const_data);
 
-    // let mut instructions: Instructions = vec![
+    // let mut code_context: Instructions = vec![
     //     Push::new(Register::Bp),
     //     Mov64rr::new(Register::Bp, Register::Sp),
     //     Sub64::new(Register::Sp, 0x20),
@@ -93,7 +94,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     //     Call::new(0x0),
     // ];
 
-    let text_section_data = instructions.to_bin();
+    let text_section_data = code_context.to_bin();
 
     let mut data_section_data: Vec<u8> = vec![];
 
@@ -104,7 +105,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
         data_section_data.push(0);
     }
 
-    let relocation_section_data = build_relocation_section(&const_data, &instructions);
+    let relocation_section_data = build_relocation_section(&const_data, &code_context);
 
     let section_layout = SectionLayout::new(vec![
         Section::new(
@@ -140,14 +141,14 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let data_section = section_layout.get_section(".data");
     let relocation_section = section_layout.get_section(".reloc");
 
-    let relocation_section_data = build_relocation_section(&const_data, &instructions);
+    let relocation_section_data = build_relocation_section(&const_data, &code_context);
 
     let import_directory_data =
         build_import_directory(import_directory_section.virtual_address, libs.clone());
 
     let external_symbols = import_directory_data.get_external_symbols(libs);
-    instructions = compute_calls(
-        instructions,
+    code_context = compute_calls(
+        code_context.clone(),
         text_section.virtual_address,
         calls,
         external_symbols,
@@ -157,11 +158,11 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     for (line, data_ref) in const_data.iter() {
         let address = IMAGE_BASE + data_section.virtual_address as u64 + data_cursor as u64;
         println!("address: {:0x}", address);
-        instructions[*line].set_op2(Operand::Imm64(address));
+        code_context.get_mut(*line).set_op2(Operand::Imm64(address));
         data_cursor += data_ref.data.len();
     }
 
-    let text_section_data: Vec<u8> = instructions.to_bin();
+    let text_section_data: Vec<u8> = code_context.to_bin();
 
     let dos_header = build_dos_header();
     let nt_header = build_nt_header(created_at, section_layout);
@@ -190,80 +191,94 @@ fn write_all_aligned(file: &mut fs::File, buf: &[u8]) -> Result<(), std::io::Err
 }
 
 fn compute_calls(
-    mut instructions: Instructions,
+    mut code_context: CodeContext,
     virtual_address: u32,
-    calls: BTreeMap<usize, String>,
+    calls: &BTreeMap<usize, String>,
     external_symbols: HashMap<String, u32>,
-) -> Instructions {
-    let text_section_data = instructions.to_bin();
+) -> CodeContext {
+    let text_section_data = code_context.to_bin();
     for (i, (c, call)) in calls.iter().enumerate() {
+        assert!(
+            code_context.get(*c).get_name() == "CALL",
+            "line: {}\n{}",
+            *c,
+            code_context.get(*c)
+        );
+
         let mut address = external_symbols[call];
         // println!("{}: {:0x}", call, address);
         address -=
             virtual_address + text_section_data.len() as u32 + ((i + 1) * SIZE_OF_JMP) as u32;
         // println!("{}: {:0x}", call, address);
-        instructions.push(JMP.op1(Operand::Imm32(address)));
-        let call_address = text_section_data.len() as u32
-            - instructions[..*c + 1].to_vec().to_bin().len() as u32
+        code_context.add(JMP.op1(Operand::Imm32(address)));
+        let call_address = text_section_data.len() as u32 - code_context.get_offset(*c + 1) as u32
             + ((i) * SIZE_OF_JMP) as u32;
         // println!(
         //     "{:0x}: {:0x}",
         //     text_section_data.len(),
-        //     instructions[..*c + 1].to_vec().to_bin().len()
+        //     code_context[..*c + 1].to_vec().to_bin().len()
         // );
         // println!("{}: {:0x}", call, call_address);
 
-        instructions[*c].set_op1(Operand::Offset32(call_address));
+        code_context
+            .get_mut(*c)
+            .set_op1(Operand::Offset32(call_address));
     }
-    instructions
+    code_context
 }
 
 pub struct ExeEmitter {
+    code_context: CodeContext,
     literals: BTreeMap<ast::Ident, Data>,
-    calls: BTreeMap<usize, String>,
     data_refs: BTreeMap<usize, DataRef>,
 }
 
 impl ExeEmitter {
     fn new(data_builder: &DataBuilder) -> Self {
         ExeEmitter {
+            code_context: CodeContext::new(),
             literals: data_builder.variables.clone(),
-            calls: BTreeMap::new(),
             data_refs: BTreeMap::new(),
         }
     }
 
-    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) -> Instructions {
-        let mut result: Instructions = vec![
+    pub fn get_code_context(&self) -> CodeContext {
+        self.code_context.clone()
+    }
+
+    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
+        self.code_context.add_slice(&[
             PUSH.op1(Operand::Register(register::RBP)),
             MOV.op1(Operand::Register(register::RBP))
                 .op2(Operand::Register(register::RSP)),
-        ];
-        result.extend(allocate_stack(&self.literals));
-        result.extend(statement_list.0.iter().fold(vec![], |mut r, stmt| {
-            r.extend(self.visit_statement(result.len() + r.len(), stmt));
-            r
-        }));
-        result.extend(stdlib::exit(0, &mut self.calls, result.len()));
-        result
+        ]);
+        self.code_context.add_slice(&allocate_stack(&self.literals));
+        statement_list.0.iter().for_each(|mut stmt| {
+            self.visit_statement(stmt);
+        });
+        stdlib::exit(&mut self.code_context, 0);
     }
 
-    fn visit_statement(&mut self, pc: usize, statement: &ast::Statement) -> Instructions {
+    fn visit_statement(&mut self, statement: &ast::Statement) {
         // println!("{}: {:#?}", statement_n, &statement);
         match statement {
-            ast::Statement::Expression(expr) => self.visit_expression(pc, expr),
-            ast::Statement::Assignment(_) => vec![],
-        }
+            ast::Statement::Expression(expr) => {
+                self.visit_expression(expr);
+            }
+            ast::Statement::Assignment(_) => (),
+        };
     }
 
-    fn visit_expression(&mut self, pc: usize, expr: &ast::Expression) -> Instructions {
+    fn visit_expression(&mut self, expr: &ast::Expression) {
         match expr {
-            ast::Expression::Call(id, expr) => self.visit_call(pc, id, expr),
-            _ => vec![],
+            ast::Expression::Call(id, expr) => {
+                self.visit_call(id, expr);
+            }
+            _ => (),
         }
     }
 
-    fn visit_call(&mut self, pc: usize, id: &ast::Ident, expr: &ast::Expression) -> Instructions {
+    fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) {
         let data = match expr {
             ast::Expression::Ident(id) => self
                 .literals
@@ -275,20 +290,19 @@ impl ExeEmitter {
         if id.value == "print" {
             let args = &[data.clone()];
 
-            let mut result = vec![];
-            result.extend(abi::push_args(pc, &mut self.data_refs, args));
-            let pc = pc + result.len();
+            abi::push_args(&mut self.code_context, &mut self.data_refs, args);
 
-            let print_call = match data.lit {
-                ast::Literal::String(_) => stdlib::print(&mut self.calls, pc),
+            match data.lit {
+                ast::Literal::String(_) => {
+                    stdlib::print(&mut self.code_context);
+                }
                 ast::Literal::Number(n) => {
-                    stdlib::printd(&mut self.calls, &mut self.data_refs, n.value, pc)
+                    stdlib::printd(&mut self.code_context, &mut self.data_refs, n.value);
                 }
             };
 
-            result.extend(print_call);
-            result.extend(abi::pop_args(args.len()));
-            return result;
+            abi::pop_args(&mut self.code_context, args.len());
+            return;
         }
 
         panic!("no such function {}", id.value)
@@ -327,7 +341,7 @@ fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
     s.as_bytes()
         .chunks(8)
         .rev()
-        .fold(vec![], |mut acc: Instructions, substr| {
+        .fold(vec![], |mut acc: Vec<Mnemonic>, substr| {
             let mut value: u64 = 0;
             for (i, c) in substr.iter().enumerate() {
                 value += (*c as u64) << (8 * i)

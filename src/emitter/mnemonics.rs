@@ -169,6 +169,7 @@ pub struct Mnemonic {
     op1: Operand,
     op2: Operand,
     op3: Operand,
+    symbol: Option<String>,
     value_loc: usize,
 }
 
@@ -187,6 +188,7 @@ impl Display for Mnemonic {
             op1: {},
             op2: {},
             op3: {},
+            symbol: {:?},
             value_loc: {},
         }}",
             self.name,
@@ -196,6 +198,7 @@ impl Display for Mnemonic {
             self.op1,
             self.op2,
             self.op3,
+            self.symbol,
             self.value_loc,
         )
     }
@@ -212,8 +215,13 @@ impl Mnemonic {
             op1: Operand::None,
             op2: Operand::None,
             op3: Operand::None,
+            symbol: None,
             value_loc: 0,
         }
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 
     pub fn set_op1(&mut self, op: Operand) {
@@ -228,6 +236,10 @@ impl Mnemonic {
         let mut cloned = self.clone();
         cloned.as_vec();
         cloned.value_loc
+    }
+
+    pub fn get_symbol(&self) -> Option<&str> {
+        self.symbol.as_deref()
     }
 
     pub fn opcode(&self, opcode: u8, operands: OperandEncoding) -> Self {
@@ -278,6 +290,12 @@ impl Mnemonic {
         }
         let mut cloned = self.clone();
         cloned.op3 = op;
+        cloned
+    }
+
+    pub fn symbol(&mut self, symbol: String) -> Self {
+        let mut cloned = self.clone();
+        cloned.symbol = Some(symbol);
         cloned
     }
 
