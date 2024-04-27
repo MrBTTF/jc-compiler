@@ -2,7 +2,12 @@ mod defs;
 mod sections;
 
 use std::{
-    borrow::BorrowMut, collections::{BTreeMap, HashMap}, fs, io::Write, mem, result, time::SystemTime
+    borrow::BorrowMut,
+    collections::{BTreeMap, HashMap},
+    fs,
+    io::Write,
+    mem, result,
+    time::SystemTime,
 };
 
 use sections::*;
@@ -268,30 +273,11 @@ impl ExeEmitter {
         };
 
         if id.value == "print" {
-            let args = &[match data.assign_type {
-                ast::AssignmentType::Let => abi::Arg::Stack(data.data_loc() as i64),
-                ast::AssignmentType::Const => abi::Arg::Data(data.data_loc() as i64),
-            }];
+            let args = &[data.clone()];
 
             let mut result = vec![];
-            result.extend(abi::push_args(args));
-            let pc: usize = pc + result.len();
-            if data.assign_type == ast::AssignmentType::Const {
-                let mut offset = 1;
-                if args.len() % 2 != 0 {
-                    offset += 1;
-                }
-                self.data_refs.insert(
-                    pc - offset,
-                    DataRef {
-                        offset: result[result.len() - offset].get_value_loc(),
-                        data: match &data.lit {
-                            ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-                            ast::Literal::Number(_) => b"%d\0".to_vec(),
-                        },
-                    },
-                );
-            }
+            result.extend(abi::push_args(pc, &mut self.data_refs, args));
+            let pc = pc + result.len();
 
             let print_call = match data.lit {
                 ast::Literal::String(_) => stdlib::print(&mut self.calls, pc),
