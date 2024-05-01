@@ -8,7 +8,7 @@ use super::{
     elf::sections::{DWord, DATA_SECTION_ADDRESS_START},
 };
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct DataRef {
     pub offset: usize,
     pub data: Vec<u8>,

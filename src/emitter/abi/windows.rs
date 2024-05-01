@@ -26,7 +26,6 @@ pub const ARG_REGISTERS: &[register::Register] =
 
 pub fn push_args(
     code_context: &mut CodeContext,
-    data_refs: &mut BTreeMap<usize, DataRef>,
     args: &[Data],
 ) {
     args.iter().enumerate().for_each(|(i, arg)| {
@@ -43,20 +42,15 @@ pub fn push_args(
                 );
             }
             AssignmentType::Const => {
-                code_context.add(
-                    MOV.op1(Operand::Register(ARG_REGISTERS[i]))
-                        .op2(Operand::Imm64(arg.data_loc())),
-                );
-                data_refs.insert(
-                    code_context.get_pc() - 1,
-                    DataRef {
-                        offset: code_context.last().get_value_loc(),
-                        data: match &arg.lit {
-                            ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-                            ast::Literal::Number(_) => b"%d\0".to_vec(),
-                        },
-                    },
-                );
+                code_context
+                    .add(
+                        MOV.op1(Operand::Register(ARG_REGISTERS[i]))
+                            .op2(Operand::Imm64(arg.data_loc())),
+                    )
+                    .with_const_data(match &arg.lit {
+                        ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
+                        ast::Literal::Number(_) => b"%d\0".to_vec(),
+                    });
             }
         }
     });

@@ -46,7 +46,7 @@ pub fn print(code_context: &mut CodeContext) {
     _print(code_context);
 }
 
-fn _printd(code_context: &mut CodeContext, data_refs: &mut BTreeMap<usize, DataRef>, number: i64) {
+fn _printd(code_context: &mut CodeContext, number: i64) {
     code_context.add_slice(&[
         MOV.op1(Operand::Register(register::RCX))
             .op2(Operand::Imm64(0)),
@@ -55,13 +55,13 @@ fn _printd(code_context: &mut CodeContext, data_refs: &mut BTreeMap<usize, DataR
         MOV.op1(Operand::Register(register::RAX))
             .op2(Operand::Imm64(0)),
     ]);
-    data_refs.insert(
-        code_context.get_pc() - 1,
-        DataRef {
-            offset: code_context.last().get_value_loc(),
-            data: number.to_le_bytes().to_vec(),
-        },
-    );
+    code_context
+        .add(
+            MOV.op1(Operand::Register(register::RAX))
+                .op2(Operand::Imm64(0)),
+        )
+        .with_const_data(number.to_le_bytes().to_vec());
+
     code_context.add_slice(&[
         SUB.op1(Operand::Register(register::RSP))
             .op2(Operand::Imm32(8)),
@@ -75,17 +75,13 @@ fn _printd(code_context: &mut CodeContext, data_refs: &mut BTreeMap<usize, DataR
     ]);
 }
 
-pub fn printd(
-    code_context: &mut CodeContext,
-    data_refs: &mut BTreeMap<usize, DataRef>,
-    number: i64,
-) {
+pub fn printd(code_context: &mut CodeContext, number: i64) {
     code_context.add(
         MOV.op1(Operand::Register(register::R8))
             .op2(Operand::Register(ARG_REGISTERS[0])),
     );
     _get_io_handle(code_context, Io::Stdout);
-    _printd(code_context, data_refs, number);
+    _printd(code_context, number);
 }
 
 pub fn exit(code_context: &mut CodeContext, exit_code: i64) {

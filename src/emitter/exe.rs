@@ -75,7 +75,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
 
     dbg!(&calls);
 
-    let const_data = exe_emitter.data_refs;
+    let const_data = code_context.get_const_data();
     dbg!(&const_data);
 
     // let mut code_context: Instructions = vec![
@@ -150,7 +150,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     code_context = compute_calls(
         code_context.clone(),
         text_section.virtual_address,
-        calls,
+        &calls,
         external_symbols,
     );
 
@@ -230,7 +230,6 @@ fn compute_calls(
 pub struct ExeEmitter {
     code_context: CodeContext,
     literals: BTreeMap<ast::Ident, Data>,
-    data_refs: BTreeMap<usize, DataRef>,
 }
 
 impl ExeEmitter {
@@ -238,7 +237,6 @@ impl ExeEmitter {
         ExeEmitter {
             code_context: CodeContext::new(),
             literals: data_builder.variables.clone(),
-            data_refs: BTreeMap::new(),
         }
     }
 
@@ -290,14 +288,14 @@ impl ExeEmitter {
         if id.value == "print" {
             let args = &[data.clone()];
 
-            abi::push_args(&mut self.code_context, &mut self.data_refs, args);
+            abi::push_args(&mut self.code_context, args);
 
             match data.lit {
                 ast::Literal::String(_) => {
                     stdlib::print(&mut self.code_context);
                 }
                 ast::Literal::Number(n) => {
-                    stdlib::printd(&mut self.code_context, &mut self.data_refs, n.value);
+                    stdlib::printd(&mut self.code_context,n.value);
                 }
             };
 
