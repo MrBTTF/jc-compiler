@@ -193,17 +193,32 @@ fn write_all_aligned(file: &mut fs::File, buf: &[u8]) -> Result<(), std::io::Err
 fn compute_calls(
     mut code_context: CodeContext,
     virtual_address: u32,
-    calls: &BTreeMap<usize, String>,
+    calls: &BTreeMap<String, Vec<usize>>,
     external_symbols: HashMap<String, u32>,
 ) -> CodeContext {
     let text_section_data = code_context.to_bin();
-    for (i, (c, call)) in calls.iter().enumerate() {
-        assert!(
-            code_context.get(*c).get_name() == "CALL",
-            "line: {}\n{}",
-            *c,
-            code_context.get(*c)
-        );
+    for (i, (call, locs)) in calls.iter().enumerate() {
+        for c in locs.iter() {
+            assert!(
+                code_context.get(*c).get_name() == "CALL",
+                "line: {}\n{}",
+                *c,
+                code_context.get(*c)
+            );
+            let call_address = text_section_data.len() as u32
+                - code_context.get_offset(*c + 1) as u32
+                + ((i) * SIZE_OF_JMP) as u32;
+            // println!(
+            //     "{:0x}: {:0x}",
+            //     text_section_data.len(),
+            //     code_context[..*c + 1].to_vec().to_bin().len()
+            // );
+            // println!("{}: {:0x}", call, call_address);
+
+            code_context
+                .get_mut(*c)
+                .set_op1(Operand::Offset32(call_address));
+        }
 
         let mut address = external_symbols[call];
         // println!("{}: {:0x}", call, address);
@@ -211,18 +226,6 @@ fn compute_calls(
             virtual_address + text_section_data.len() as u32 + ((i + 1) * SIZE_OF_JMP) as u32;
         // println!("{}: {:0x}", call, address);
         code_context.add(JMP.op1(Operand::Imm32(address)));
-        let call_address = text_section_data.len() as u32 - code_context.get_offset(*c + 1) as u32
-            + ((i) * SIZE_OF_JMP) as u32;
-        // println!(
-        //     "{:0x}: {:0x}",
-        //     text_section_data.len(),
-        //     code_context[..*c + 1].to_vec().to_bin().len()
-        // );
-        // println!("{}: {:0x}", call, call_address);
-
-        code_context
-            .get_mut(*c)
-            .set_op1(Operand::Offset32(call_address));
     }
     code_context
 }
@@ -295,7 +298,7 @@ impl ExeEmitter {
                     stdlib::print(&mut self.code_context);
                 }
                 ast::Literal::Number(n) => {
-                    stdlib::printd(&mut self.code_context,n.value);
+                    stdlib::printd(&mut self.code_context, n.value);
                 }
             };
 

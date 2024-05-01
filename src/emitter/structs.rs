@@ -7,7 +7,7 @@ pub struct CodeContext {
     instructions: Vec<Mnemonic>,
     pc: usize,
     offsets: Vec<usize>,
-    calls: BTreeMap<usize, String>,
+    calls: BTreeMap<String, Vec<usize>>,
     const_data: BTreeMap<usize, DataRef>,
 }
 
@@ -24,8 +24,8 @@ impl CodeContext {
 
     pub fn add(&mut self, mnemonic: Mnemonic) -> &mut Self {
         if mnemonic.get_name() == "CALL" {
-            self.calls
-                .insert(self.pc, mnemonic.get_symbol().unwrap().to_string());
+            let symbol = mnemonic.get_symbol().unwrap().to_string();
+            self.calls.entry(symbol).or_default().push(self.pc);
         }
         self.instructions.push(mnemonic.clone());
         self.pc += 1;
@@ -70,7 +70,7 @@ impl CodeContext {
         self.instructions.last().unwrap()
     }
 
-    pub fn get_calls(&self) -> BTreeMap<usize, String> {
+    pub fn get_calls(&self) -> BTreeMap<String, Vec<usize>> {
         self.calls.clone()
     }
 
