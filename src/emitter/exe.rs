@@ -1,18 +1,9 @@
 mod defs;
-mod sections;
+pub mod sections;
 
-use std::{
-    borrow::BorrowMut,
-    collections::{BTreeMap, HashMap},
-    fs,
-    io::Write,
-    mem, result,
-    time::SystemTime,
-};
+use std::{collections::BTreeMap, env, fs, io::Write, time::SystemTime};
 
 use sections::*;
-
-use crate::emitter::data::DataRef;
 
 use super::{ast::AssignmentType, stdlib::windows as stdlib};
 use crate::emitter::abi::windows as abi;
@@ -25,8 +16,6 @@ use super::{
     mnemonics::*,
     structs::{CodeContext, Sliceable},
 };
-
-const SIZE_OF_JMP: usize = mem::size_of::<u8>() * 2 + mem::size_of::<u32>();
 
 pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let mut libs = BTreeMap::new();
@@ -60,7 +49,11 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
 
     exe_emitter.visit_statement_list(ast);
     let mut code_context = exe_emitter.get_code_context();
-    // dbg!(&code_context);
+    let mut debug_code_file =
+        fs::File::create(env::current_dir().unwrap().join("local/debug/code.txt")).unwrap();
+    debug_code_file
+        .write_all(format!("{:#?}", &code_context).as_bytes())
+        .unwrap();
 
     let created_at = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -76,25 +69,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     dbg!(&calls);
 
     let const_data = code_context.get_const_data();
-    dbg!(&const_data);
-
-    // let mut code_context: Instructions = vec![
-    //     Push::new(Register::Bp),
-    //     Mov64rr::new(Register::Bp, Register::Sp),
-    //     Sub64::new(Register::Sp, 0x20),
-    //     Mov32::new(Register::Cx, 0x1),
-    //     Call::new(0x0),
-    //     Mov64rr::new(Register::Bx, Register::Ax),
-    //     Mov32::new(Register::Cx, 0x0),
-    //     Mov64rr::new(Register::Dx, Register::Bx),
-    //     Mov64Ext::new(RegisterExt::R8, 0x140003000),
-    //     Mov32Ext::new(RegisterExt::R9, 0x0),
-    //     Call::new(0x0),
-    //     Xor64rr::new(Register::Ax, Register::Ax),
-    //     Call::new(0x0),
-    // ];
-
-    let text_section_data = code_context.to_bin();
+    // dbg!(&const_data);
 
     let mut data_section_data: Vec<u8> = vec![];
 
@@ -110,7 +85,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
     let section_layout = SectionLayout::new(vec![
         Section::new(
             ".text".to_string(),
-            (text_section_data.len() + SIZE_OF_JMP * calls.len()) as u32,
+            code_context.get_code_size_with_calls() as u32,
             SECTION_CHARACTERISTICS_TEXT
                 | SECTION_CHARACTERISTICS_EXEC
                 | SECTION_CHARACTERISTICS_READ,
@@ -147,20 +122,8 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
         build_import_directory(import_directory_section.virtual_address, libs.clone());
 
     let external_symbols = import_directory_data.get_external_symbols(libs);
-    code_context = compute_calls(
-        code_context.clone(),
-        text_section.virtual_address,
-        &calls,
-        external_symbols,
-    );
-
-    let mut data_cursor = 0;
-    for (line, data_ref) in const_data.iter() {
-        let address = IMAGE_BASE + data_section.virtual_address as u64 + data_cursor as u64;
-        println!("address: {:0x}", address);
-        code_context.get_mut(*line).set_op2(Operand::Imm64(address));
-        data_cursor += data_ref.data.len();
-    }
+    code_context.compute_calls(text_section.virtual_address, external_symbols);
+    code_context.compute_data(data_section.virtual_address, const_data);
 
     let text_section_data: Vec<u8> = code_context.to_bin();
 
@@ -190,46 +153,6 @@ fn write_all_aligned(file: &mut fs::File, buf: &[u8]) -> Result<(), std::io::Err
     file.write_all(&buf)
 }
 
-fn compute_calls(
-    mut code_context: CodeContext,
-    virtual_address: u32,
-    calls: &BTreeMap<String, Vec<usize>>,
-    external_symbols: HashMap<String, u32>,
-) -> CodeContext {
-    let text_section_data = code_context.to_bin();
-    for (i, (call, locs)) in calls.iter().enumerate() {
-        for c in locs.iter() {
-            assert!(
-                code_context.get(*c).get_name() == "CALL",
-                "line: {}\n{}",
-                *c,
-                code_context.get(*c)
-            );
-            let call_address = text_section_data.len() as u32
-                - code_context.get_offset(*c + 1) as u32
-                + ((i) * SIZE_OF_JMP) as u32;
-            // println!(
-            //     "{:0x}: {:0x}",
-            //     text_section_data.len(),
-            //     code_context[..*c + 1].to_vec().to_bin().len()
-            // );
-            // println!("{}: {:0x}", call, call_address);
-
-            code_context
-                .get_mut(*c)
-                .set_op1(Operand::Offset32(call_address));
-        }
-
-        let mut address = external_symbols[call];
-        // println!("{}: {:0x}", call, address);
-        address -=
-            virtual_address + text_section_data.len() as u32 + ((i + 1) * SIZE_OF_JMP) as u32;
-        // println!("{}: {:0x}", call, address);
-        code_context.add(JMP.op1(Operand::Imm32(address)));
-    }
-    code_context
-}
-
 pub struct ExeEmitter {
     code_context: CodeContext,
     literals: BTreeMap<ast::Ident, Data>,
@@ -254,7 +177,7 @@ impl ExeEmitter {
                 .op2(Operand::Register(register::RSP)),
         ]);
         self.code_context.add_slice(&allocate_stack(&self.literals));
-        statement_list.0.iter().for_each(|mut stmt| {
+        statement_list.0.iter().for_each(|stmt| {
             self.visit_statement(stmt);
         });
         stdlib::exit(&mut self.code_context, 0);

@@ -455,6 +455,10 @@ lazy_static! {
         .no_rex_w();
 }
 
+lazy_static! {
+    pub static ref SIZE_OF_JMP: usize = JMP.op1(Operand::Imm32(0)).as_vec().len();
+}
+
 #[cfg(test)]
 mod tests {
     use crate::emitter::mnemonics::*;
