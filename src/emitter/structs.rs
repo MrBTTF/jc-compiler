@@ -6,7 +6,7 @@ use std::{
 use super::{
     data::DataRef,
     exe::sections::IMAGE_BASE,
-    mnemonics::{self, Mnemonic, SIZE_OF_JMP},
+    mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP},
 };
 
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ impl CodeContext {
     }
 
     pub fn add(&mut self, mnemonic: Mnemonic) -> &mut Self {
-        if mnemonic.get_name() == "CALL" {
+        if let MnemonicName::Call = mnemonic.get_name() {
             let symbol = mnemonic.get_symbol().unwrap().to_string();
             self.calls.entry(symbol).or_default().push(self.pc);
         }
@@ -100,8 +100,8 @@ impl CodeContext {
     ) {
         for (call, locs) in self.calls.clone().iter() {
             for c in locs.iter() {
-                assert!(
-                    self.instructions[*c].get_name() == "CALL",
+                assert_eq!(
+                    self.instructions[*c].get_name(), MnemonicName::Call,
                     "line: {}\n{}",
                     *c,
                     self.instructions[*c]

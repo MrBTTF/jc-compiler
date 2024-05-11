@@ -161,7 +161,7 @@ pub enum OperandEncoding {
 
 #[derive(Debug, Clone)]
 pub struct Mnemonic {
-    name: String,
+    name: MnemonicName,
     has_rex_w: bool,
     reg: u8,
     rm: u8,
@@ -180,7 +180,7 @@ impl Display for Mnemonic {
         });
         write!(
             f,
-            "{} {{
+            "{:#?} {{
             has_rex_w: {},
             reg: {},
             rm: {},
@@ -205,7 +205,7 @@ impl Display for Mnemonic {
 }
 
 impl Mnemonic {
-    fn new(name: String) -> Self {
+    fn new(name: MnemonicName) -> Self {
         Mnemonic {
             name,
             has_rex_w: true,
@@ -220,8 +220,8 @@ impl Mnemonic {
         }
     }
 
-    pub fn get_name(&self) -> &str {
-        &self.name
+    pub fn get_name(&self) -> MnemonicName {
+        self.name
     }
 
     pub fn set_op1(&mut self, op: Operand) {
@@ -239,6 +239,7 @@ impl Mnemonic {
     }
 
     pub fn get_symbol(&self) -> Option<&str> {
+        assert_eq!(self.name, MnemonicName::Call);
         self.symbol.as_deref()
     }
 
@@ -301,7 +302,7 @@ impl Mnemonic {
 
     pub fn as_vec(&mut self) -> Vec<u8> {
         let mut result = vec![];
-        let mut operand_enc = None;
+        let mut operand_enc;
 
         let mut prefix = 0;
         let mut _mod = 0;
@@ -423,32 +424,44 @@ impl Mnemonic {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MnemonicName {
+    Mov,
+    Add,
+    Sub,
+    Div,
+    Push,
+    Pop,
+    Call,
+    Jmp,
+}
+
 lazy_static! {
-    pub static ref MOV: Mnemonic = Mnemonic::new("MOV".to_string())
+    pub static ref MOV: Mnemonic = Mnemonic::new(MnemonicName::Mov)
         .opcode(0x89, OperandEncoding::MR)
         .opcode(0x8B, OperandEncoding::RM)
         .opcode(0xB8, OperandEncoding::OI);
-    pub static ref ADD: Mnemonic = Mnemonic::new("ADD".to_string())
+    pub static ref ADD: Mnemonic = Mnemonic::new(MnemonicName::Add)
         .opcode(0x01, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI);
-    pub static ref SUB: Mnemonic = Mnemonic::new("SUB".to_string())
+    pub static ref SUB: Mnemonic = Mnemonic::new(MnemonicName::Sub)
         .opcode(0x29, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI)
         .reg(5);
-    pub static ref DIV: Mnemonic = Mnemonic::new("DIV".to_string())
+    pub static ref DIV: Mnemonic = Mnemonic::new(MnemonicName::Div)
         .opcode(0xF7, OperandEncoding::MI)
         .reg(6);
-    pub static ref PUSH: Mnemonic = Mnemonic::new("PUSH".to_string())
+    pub static ref PUSH: Mnemonic = Mnemonic::new(MnemonicName::Push)
         .opcode(0x50, OperandEncoding::OI)
         .opcode(0x68, OperandEncoding::I)
         .no_rex_w();
-    pub static ref POP: Mnemonic = Mnemonic::new("POP".to_string())
+    pub static ref POP: Mnemonic = Mnemonic::new(MnemonicName::Pop)
         .opcode(0x58, OperandEncoding::OI)
         .no_rex_w();
-    pub static ref CALL: Mnemonic = Mnemonic::new("CALL".to_string())
+    pub static ref CALL: Mnemonic = Mnemonic::new(MnemonicName::Call)
         .opcode(0xE8, OperandEncoding::D)
         .no_rex_w();
-    pub static ref JMP: Mnemonic = Mnemonic::new("JMP".to_string())
+    pub static ref JMP: Mnemonic = Mnemonic::new(MnemonicName::Jmp)
         .opcode(0xFF, OperandEncoding::I)
         .reg(4)
         .rm(RM_DISP32)
