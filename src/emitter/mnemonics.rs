@@ -405,7 +405,10 @@ impl Mnemonic {
         }
         // dbg!(operand_enc);
         // println!("{}", &self);
-        let opcode = self.opcodes.get(&operand_enc.unwrap()).unwrap();
+        let opcode = self
+            .opcodes
+            .get(&operand_enc.unwrap())
+            .unwrap_or_else(|| panic!("No encoding for operands: {:?}, {:?}", self.op1, self.op2));
         result.extend(opcode.to_le_bytes());
 
         let mod_rm = _mod << 6 | reg << 3 | rm;
@@ -612,5 +615,12 @@ mod tests {
     fn test_jmp(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = JMP.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_invalid_enc() {
+        let mut instruction = MOV.op1(Operand::Offset32(0)).op2(Operand::Offset32(0));
+        instruction.as_vec();
     }
 }
