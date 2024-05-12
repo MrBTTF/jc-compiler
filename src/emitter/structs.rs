@@ -112,13 +112,13 @@ impl CodeContext {
                     .set_op1(mnemonics::Operand::Offset32(call_address as u32));
             }
 
-            self.add(mnemonics::JMP.op1(mnemonics::Operand::Imm32(0)));
+            self.add(mnemonics::JMP.op1(0_u32));
             let mut jump_offset = external_symbols[call];
             jump_offset -= text_section_start + self.get_code_size() as u32;
             self.instructions
                 .last_mut()
                 .unwrap()
-                .set_op1(mnemonics::Operand::Imm32(jump_offset));
+                .set_op1(jump_offset);
         }
     }
 
@@ -128,7 +128,7 @@ impl CodeContext {
             let address = IMAGE_BASE + data_section_start as u64 + data_cursor as u64;
             // println!("address: {:0x}", address);
             self.get_mut(*line)
-                .set_op2(mnemonics::Operand::Imm64(address));
+                .set_op2(address);
             data_cursor += data_ref.data.len();
         }
     }

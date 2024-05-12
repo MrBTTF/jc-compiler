@@ -13,81 +13,59 @@ pub enum Io {
 
 fn _get_io_handle(code_context: &mut CodeContext, io_handle: Io) {
     code_context.add_slice(&[
-        MOV.op1(Operand::Register(ARG_REGISTERS[0]))
-            .op2(Operand::Imm64(io_handle as u64)),
+        MOV.op1(ARG_REGISTERS[0]).op2(io_handle as u64),
         CALL.op1(Operand::Offset32(0))
             .symbol("__acrt_iob_func".to_string()),
-        MOV.op1(Operand::Register(register::RDX))
-            .op2(Operand::Register(register::RAX)),
+        MOV.op1(register::RDX).op2(register::RAX),
     ]);
 }
 
 fn _print(code_context: &mut CodeContext) {
     code_context.add_slice(&[
-        MOV.op1(Operand::Register(register::RCX))
-            .op2(Operand::Imm64(0)),
-        MOV.op1(Operand::Register(register::R9))
-            .op2(Operand::Imm64(0)),
-        SUB.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(32)),
+        MOV.op1(register::RCX).op2(0_u64),
+        MOV.op1(register::R9).op2(0_u64),
+        SUB.op1(register::RSP).op2(32_u32),
         CALL.op1(Operand::Offset32(0))
             .symbol("__stdio_common_vfprintf".to_string()),
-        ADD.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(32)),
+        ADD.op1(register::RSP).op2(32_u32),
     ]);
 }
 
 pub fn print(code_context: &mut CodeContext) {
-    code_context.add(
-        MOV.op1(Operand::Register(register::R8))
-            .op2(Operand::Register(ARG_REGISTERS[0])),
-    );
+    code_context.add(MOV.op1(register::R8).op2(ARG_REGISTERS[0]));
     _get_io_handle(code_context, Io::Stdout);
     _print(code_context);
 }
 
 fn _printd(code_context: &mut CodeContext, number: i64) {
     code_context.add_slice(&[
-        MOV.op1(Operand::Register(register::RCX))
-            .op2(Operand::Imm64(0)),
-        MOV.op1(Operand::Register(register::R9))
-            .op2(Operand::Imm64(0)),
-        MOV.op1(Operand::Register(register::RAX))
-            .op2(Operand::Imm64(0)),
+        MOV.op1(register::RCX).op2(0_u64),
+        MOV.op1(register::R9).op2(0_u64),
+        MOV.op1(register::RAX).op2(0_u64),
     ]);
     code_context
-        .add(
-            MOV.op1(Operand::Register(register::RAX))
-                .op2(Operand::Imm64(0)),
-        )
+        .add(MOV.op1(register::RAX).op2(0_u64))
         .with_const_data(number.to_le_bytes().to_vec());
 
     code_context.add_slice(&[
-        SUB.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(8)),
-        PUSH.op1(Operand::Register(register::RAX)),
-        SUB.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(32)),
+        SUB.op1(register::RSP).op2(8_u32),
+        PUSH.op1(register::RAX),
+        SUB.op1(register::RSP).op2(32_u32),
         CALL.op1(Operand::Offset32(0))
             .symbol("__stdio_common_vfprintf".to_string()),
-        ADD.op1(Operand::Register(register::RSP))
-            .op2(Operand::Imm32(48)),
+        ADD.op1(register::RSP).op2(48_u32),
     ]);
 }
 
 pub fn printd(code_context: &mut CodeContext, number: i64) {
-    code_context.add(
-        MOV.op1(Operand::Register(register::R8))
-            .op2(Operand::Register(ARG_REGISTERS[0])),
-    );
+    code_context.add(MOV.op1(register::R8).op2(ARG_REGISTERS[0]));
     _get_io_handle(code_context, Io::Stdout);
     _printd(code_context, number);
 }
 
-pub fn exit(code_context: &mut CodeContext, exit_code: i64) {
+pub fn exit(code_context: &mut CodeContext, exit_code: u64) {
     code_context.add_slice(&[
-        MOV.op1(Operand::Register(register::RAX))
-            .op2(Operand::Imm64(exit_code as u64)),
+        MOV.op1(register::RAX).op2(exit_code),
         CALL.op1(Operand::Offset32(0))
             .symbol("ExitProcess".to_string()),
     ]);

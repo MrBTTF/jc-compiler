@@ -172,9 +172,9 @@ impl ExeEmitter {
 
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
         self.code_context.add_slice(&[
-            PUSH.op1(Operand::Register(register::RBP)),
-            MOV.op1(Operand::Register(register::RBP))
-                .op2(Operand::Register(register::RSP)),
+            PUSH.op1(register::RBP),
+            MOV.op1(register::RBP)
+                .op2(register::RSP),
         ]);
         self.code_context.add_slice(&allocate_stack(&self.literals));
         statement_list.0.iter().for_each(|stmt| {
@@ -243,9 +243,9 @@ fn allocate_stack(literals: &BTreeMap<ast::Ident, Data>) -> Vec<Mnemonic> {
             AssignmentType::Let => match &data.lit {
                 ast::Literal::String(s) => push_string_on_stack(s),
                 ast::Literal::Number(n) => vec![
-                    MOV.op1(Operand::Register(register::RAX))
-                        .op1(Operand::Imm64(n.value as u64)),
-                    PUSH.op1(Operand::Register(register::RAX)),
+                    MOV.op1(register::RAX)
+                        .op1(n.value as u64),
+                    PUSH.op1(register::RAX),
                 ],
             },
             AssignmentType::Const => vec![],
@@ -254,8 +254,8 @@ fn allocate_stack(literals: &BTreeMap<ast::Ident, Data>) -> Vec<Mnemonic> {
 
     if result.len() % 4 != 0 {
         result.push(
-            SUB.op1(Operand::Register(register::RSP))
-                .op2(Operand::Imm32(8)),
+            SUB.op1(register::RSP)
+                .op2(8_u32),
         );
     }
     result
@@ -271,10 +271,10 @@ fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
                 value += (*c as u64) << (8 * i)
             }
             acc.push(
-                MOV.op1(Operand::Register(register::RAX))
-                    .op2(Operand::Imm64(value)),
+                MOV.op1(register::RAX)
+                    .op2(value),
             );
-            acc.push(PUSH.op1(Operand::Register(register::RAX)));
+            acc.push(PUSH.op1(register::RAX));
             acc
         })
 }

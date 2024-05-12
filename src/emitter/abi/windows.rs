@@ -29,23 +29,23 @@ pub fn push_args(
     args: &[Data],
 ) {
     args.iter().enumerate().for_each(|(i, arg)| {
-        code_context.add(PUSH.op1(Operand::Register(ARG_REGISTERS[i])));
+        code_context.add(PUSH.op1(ARG_REGISTERS[i]));
         match arg.assign_type {
             AssignmentType::Let => {
                 code_context.add(
-                    MOV.op1(Operand::Register(ARG_REGISTERS[i]))
-                        .op2(Operand::Register(register::RBP)),
+                    MOV.op1(ARG_REGISTERS[i])
+                        .op2(register::RBP),
                 );
                 code_context.add(
-                    SUB.op1(Operand::Register(ARG_REGISTERS[i]))
-                        .op2(Operand::Imm32(arg.data_loc() as u32)),
+                    SUB.op1(ARG_REGISTERS[i])
+                        .op2(arg.data_loc() as u32),
                 );
             }
             AssignmentType::Const => {
                 code_context
                     .add(
-                        MOV.op1(Operand::Register(ARG_REGISTERS[i]))
-                            .op2(Operand::Imm64(arg.data_loc())),
+                        MOV.op1(ARG_REGISTERS[i])
+                            .op2(arg.data_loc()),
                     )
                     .with_const_data(match &arg.lit {
                         ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
@@ -56,8 +56,8 @@ pub fn push_args(
     });
     if args.len() % 2 != 0 {
         code_context.add(
-            SUB.op1(Operand::Register(register::RSP))
-                .op2(Operand::Imm32(8)),
+            SUB.op1(register::RSP)
+                .op2(8_u32),
         );
     }
 }
@@ -65,11 +65,11 @@ pub fn push_args(
 pub fn pop_args(code_context: &mut CodeContext, args_count: usize) {
     if args_count % 2 != 0 {
         code_context.add(
-            ADD.op1(Operand::Register(register::RSP))
-                .op2(Operand::Imm32(8)),
+            ADD.op1(register::RSP)
+                .op2(8_u32),
         );
     }
     (0..args_count).for_each(|i| {
-        code_context.add(POP.op1(Operand::Register(ARG_REGISTERS[i])));
+        code_context.add(POP.op1(ARG_REGISTERS[i]));
     });
 }

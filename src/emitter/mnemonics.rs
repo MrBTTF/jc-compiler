@@ -87,7 +87,7 @@ pub mod register {
 
     impl From<Register> for u8 {
         fn from(reg: Register) -> Self {
-            reg.code as u8
+            reg.code
         }
     }
 
@@ -108,7 +108,7 @@ pub mod register {
 pub enum Operand {
     None,
     Register(register::Register),
-    Imm8(u16),
+    Imm8(u8),
     Imm16(u16),
     Imm32(u32),
     Imm64(u64),
@@ -146,6 +146,36 @@ impl Display for Operand {
             Operand::Offset32(value) => write!(f, "Offset32( 0x{:0x} )", value),
             _ => write!(f, "{:#?}", self),
         }
+    }
+}
+
+impl From<register::Register> for Operand {
+    fn from(value: register::Register) -> Self {
+        Operand::Register(value)
+    }
+}
+
+impl From<u8> for Operand {
+    fn from(value: u8) -> Self {
+        Operand::Imm8(value)
+    }
+}
+
+impl From<u16> for Operand {
+    fn from(value: u16) -> Self {
+        Operand::Imm16(value)
+    }
+}
+
+impl From<u32> for Operand {
+    fn from(value: u32) -> Self {
+        Operand::Imm32(value)
+    }
+}
+
+impl From<u64> for Operand {
+    fn from(value: u64) -> Self {
+        Operand::Imm64(value)
     }
 }
 
@@ -224,12 +254,12 @@ impl Mnemonic {
         self.name
     }
 
-    pub fn set_op1(&mut self, op: Operand) {
-        self.op1 = op;
+    pub fn set_op1(&mut self, op: impl Into<Operand>) {
+        self.op1 = op.into();
     }
 
-    pub fn set_op2(&mut self, op: Operand) {
-        self.op2 = op;
+    pub fn set_op2(&mut self, op: impl Into<Operand>) {
+        self.op2 = op.into();
     }
 
     pub fn get_value_loc(&self) -> usize {
@@ -267,21 +297,21 @@ impl Mnemonic {
         cloned
     }
 
-    pub fn op1(&self, op: Operand) -> Self {
+    pub fn op1(&self, op: impl Into<Operand>) -> Self {
         if self.op1 != Operand::None {
             panic!("op1 is already assigned")
         }
         let mut cloned = self.clone();
-        cloned.op1 = op;
+        cloned.op1 = op.into();
         cloned
     }
 
-    pub fn op2(&self, op: Operand) -> Self {
+    pub fn op2(&self, op: impl Into<Operand>) -> Self {
         if self.op2 != Operand::None {
             panic!("op2 is already assigned")
         }
         let mut cloned = self.clone();
-        cloned.op2 = op;
+        cloned.op2 = op.into();
         cloned
     }
 
@@ -478,32 +508,40 @@ mod tests {
     use rstest::*;
 
     #[rstest]
-    #[case::imm16(Operand::Register(register::CX), Operand::Imm16(0xABCD), vec![0x66, 0xB9, 0xCD, 0xAB])]
-    #[case::imm32(Operand::Register(register::ECX), Operand::Imm32(0xABCDEF12), vec![ 0xB9, 0x12, 0xEF, 0xCD, 0xAB])]
-    #[case::imm64(Operand::Register(register::RCX), Operand::Imm64(0xABCDEF12ABCDEF12), vec![ 0x48,0xB9,0x12,0xEF,0xCD,0xAB,0x12,0xEF,0xCD,0xAB])]
-    #[case::CxAx(Operand::Register(register::CX), Operand::Register(register::AX), vec![0x66,0x89,0xC1])]
-    #[case::EcxEax(Operand::Register(register::ECX), Operand::Register(register::EAX), vec![0x89,0xC1])]
-    #[case::RcxRax(Operand::Register(register::RCX), Operand::Register(register::RAX), vec![0x48,0x89,0xC1])]
-    fn test_mov(#[case] op1: Operand, #[case] op2: Operand, #[case] expected: Vec<u8>) {
+    #[case::imm16(register::CX, 0xABCD_u16, vec![0x66, 0xB9, 0xCD, 0xAB])]
+    #[case::imm32(register::ECX, 0xABCDEF12_u32, vec![ 0xB9, 0x12, 0xEF, 0xCD, 0xAB])]
+    #[case::imm64(register::RCX, 0xABCDEF12ABCDEF12_u64, vec![ 0x48,0xB9,0x12,0xEF,0xCD,0xAB,0x12,0xEF,0xCD,0xAB])]
+    #[case::CxAx(register::CX, register::AX, vec![0x66,0x89,0xC1])]
+    #[case::EcxEax(register::ECX, register::EAX, vec![0x89,0xC1])]
+    #[case::RcxRax(register::RCX, register::RAX, vec![0x48,0x89,0xC1])]
+    fn test_mov(
+        #[case] op1: impl Into<Operand>,
+        #[case] op2: impl Into<Operand>,
+        #[case] expected: Vec<u8>,
+    ) {
         let mut instruction = MOV.op1(op1).op2(op2);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::imm64(Operand::Register(register::R8D), Operand::Imm32(0xABCDEF12), vec![0x41,0xB8,0x12,0xEF,0xCD,0xAB])]
-    #[case::R8Rax(Operand::Register(register::R8), Operand::Register(register::RAX), vec![0x49,0x89,0xC0])]
-    #[case::R8R9(Operand::Register(register::R8), Operand::Register(register::R9), vec![0x4D,0x89,0xC8])]
-    fn test_mov_ext(#[case] op1: Operand, #[case] op2: Operand, #[case] expected: Vec<u8>) {
+    #[case::imm64(register::R8D, 0xABCDEF12_u32, vec![0x41,0xB8,0x12,0xEF,0xCD,0xAB])]
+    #[case::R8Rax(register::R8, register::RAX, vec![0x49,0x89,0xC0])]
+    #[case::R8R9(register::R8, register::R9, vec![0x4D,0x89,0xC8])]
+    fn test_mov_ext(
+        #[case] op1: impl Into<Operand>,
+        #[case] op2: impl Into<Operand>,
+        #[case] expected: Vec<u8>,
+    ) {
         let mut instruction = MOV.op1(op1).op2(op2);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::RcxRax8(Operand::Register(register::RCX), Operand::Register(register::RAX),Operand::Offset8(0xAB), vec![0x48,0x8B,0x48,0xAB])]
-    #[case::RcxRax32(Operand::Register(register::RCX), Operand::Register(register::RAX),Operand::Offset32(0xABCDEF12), vec![0x48,0x8B,0x88,0x12,0xEF,0xCD,0xAB])]
+    #[case::RcxRax8(register::RCX, register::RAX,Operand::Offset8(0xAB), vec![0x48,0x8B,0x48,0xAB])]
+    #[case::RcxRax32(register::RCX, register::RAX,Operand::Offset32(0xABCDEF12), vec![0x48,0x8B,0x88,0x12,0xEF,0xCD,0xAB])]
     fn test_mov_offset(
-        #[case] op1: Operand,
-        #[case] op2: Operand,
+        #[case] op1: impl Into<Operand>,
+        #[case] op2: impl Into<Operand>,
         #[case] op3: Operand,
         #[case] expected: Vec<u8>,
     ) {
@@ -512,58 +550,66 @@ mod tests {
     }
 
     #[rstest]
-    #[case::imm16( Operand::Imm16(0xABCD), vec![0x66,0x68,0xCD,0xAB])]
-    #[case::imm32( Operand::Imm32(0xABCDEF12), vec![0x68,0x12,0xEF,0xCD,0xAB])]
-    #[case::Rcx(Operand::Register(register::RCX),vec![0x51])]
-    fn test_push(#[case] op1: Operand, #[case] expected: Vec<u8>) {
+    #[case::imm16( 0xABCD_u16, vec![0x66,0x68,0xCD,0xAB])]
+    #[case::imm32( 0xABCDEF12_u32, vec![0x68,0x12,0xEF,0xCD,0xAB])]
+    #[case::Rcx(register::RCX,vec![0x51])]
+    fn test_push(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = PUSH.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::Rcx(Operand::Register(register::ECX),vec![0x59])]
-    #[case::R9(Operand::Register(register::R9),vec![0x41, 0x59])]
-    fn test_pop(#[case] op1: Operand, #[case] expected: Vec<u8>) {
+    #[case::Rcx(register::ECX,vec![0x59])]
+    #[case::R9(register::R9,vec![0x41, 0x59])]
+    fn test_pop(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = POP.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::imm32(Operand::Register(register::ECX), Operand::Imm32(0xABCDEF12), vec![0x81,0xC1,0x12,0xEF,0xCD,0xAB])]
-    #[case::Rimm32(Operand::Register(register::RCX), Operand::Imm32(0xABCDEF12), vec![0x48,0x81,0xC1,0x12,0xEF,0xCD,0xAB])]
-    #[case::RcxRax(Operand::Register(register::RCX), Operand::Register(register::RAX), vec![0x48,0x01,0xC1])]
-    fn test_add(#[case] op1: Operand, #[case] op2: Operand, #[case] expected: Vec<u8>) {
+    #[case::imm32(register::ECX, 0xABCDEF12_u32, vec![0x81,0xC1,0x12,0xEF,0xCD,0xAB])]
+    #[case::Rimm32(register::RCX, 0xABCDEF12_u32, vec![0x48,0x81,0xC1,0x12,0xEF,0xCD,0xAB])]
+    #[case::RcxRax(register::RCX, register::RAX, vec![0x48,0x01,0xC1])]
+    fn test_add(
+        #[case] op1: impl Into<Operand>,
+        #[case] op2: impl Into<Operand>,
+        #[case] expected: Vec<u8>,
+    ) {
         let mut instruction = ADD.op1(op1).op2(op2);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::imm32(Operand::Register(register::ECX), Operand::Imm32(0xABCDEF12), vec![0x81,0xE9,0x12,0xEF,0xCD,0xAB])]
-    #[case::Rimm32(Operand::Register(register::RCX), Operand::Imm32(0xABCDEF12), vec![0x48,0x81,0xE9,0x12,0xEF,0xCD,0xAB])]
-    #[case::RcxRax(Operand::Register(register::RCX), Operand::Register(register::RAX), vec![0x48,0x29,0xC1])]
-    fn test_sub(#[case] op1: Operand, #[case] op2: Operand, #[case] expected: Vec<u8>) {
+    #[case::imm32(register::ECX, 0xABCDEF12_u32, vec![0x81,0xE9,0x12,0xEF,0xCD,0xAB])]
+    #[case::Rimm32(register::RCX, 0xABCDEF12_u32, vec![0x48,0x81,0xE9,0x12,0xEF,0xCD,0xAB])]
+    #[case::RcxRax(register::RCX, register::RAX, vec![0x48,0x29,0xC1])]
+    fn test_sub(
+        #[case] op1: impl Into<Operand>,
+        #[case] op2: impl Into<Operand>,
+        #[case] expected: Vec<u8>,
+    ) {
         let mut instruction = SUB.op1(op1).op2(op2);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::Eax(Operand::Register(register::ECX), vec![0xF7, 0xF1])]
-    #[case::Rcx(Operand::Register(register::RCX), vec![0x48,0xF7, 0xF1])]
-    fn test_div(#[case] op1: Operand, #[case] expected: Vec<u8>) {
+    #[case::Eax(register::ECX, vec![0xF7, 0xF1])]
+    #[case::Rcx(register::RCX, vec![0x48,0xF7, 0xF1])]
+    fn test_div(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = DIV.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
     #[case::Offset32(Operand::Offset32(0xABCDEF12), vec![0xE8,0x12,0xEF,0xCD,0xAB])]
-    fn test_call(#[case] op1: Operand, #[case] expected: Vec<u8>) {
+    fn test_call(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = CALL.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
     }
 
     #[rstest]
-    #[case::Imm64(Operand::Imm64(0xABCDEF12), vec![0xFF, 0x25,0x12,0xEF,0xCD,0xAB, 0x0, 0x0, 0x0, 0x0])]
-    fn test_jmp(#[case] op1: Operand, #[case] expected: Vec<u8>) {
+    #[case::Imm64(0xABCDEF12_u64, vec![0xFF, 0x25,0x12,0xEF,0xCD,0xAB, 0x0, 0x0, 0x0, 0x0])]
+    fn test_jmp(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = JMP.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
     }
