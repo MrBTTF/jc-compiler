@@ -173,8 +173,7 @@ impl ExeEmitter {
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
         self.code_context.add_slice(&[
             PUSH.op1(register::RBP),
-            MOV.op1(register::RBP)
-                .op2(register::RSP),
+            MOV.op1(register::RBP).op2(register::RSP),
         ]);
         self.code_context.add_slice(&allocate_stack(&self.literals));
         statement_list.0.iter().for_each(|stmt| {
@@ -198,6 +197,7 @@ impl ExeEmitter {
             ast::Expression::Call(id, expr) => {
                 self.visit_call(id, expr);
             }
+            ast::Expression::Loop(l) => self.visit_loop(l),
             _ => (),
         }
     }
@@ -231,6 +231,13 @@ impl ExeEmitter {
 
         panic!("no such function {}", id.value)
     }
+
+    fn visit_loop(&mut self, l: &ast::Loop) {
+        // self.code_context.add(mnemonic);
+        l.body.iter().for_each(|stmt| {
+            self.visit_statement(stmt);
+        });
+    }
 }
 
 fn allocate_stack(literals: &BTreeMap<ast::Ident, Data>) -> Vec<Mnemonic> {
@@ -243,8 +250,7 @@ fn allocate_stack(literals: &BTreeMap<ast::Ident, Data>) -> Vec<Mnemonic> {
             AssignmentType::Let => match &data.lit {
                 ast::Literal::String(s) => push_string_on_stack(s),
                 ast::Literal::Number(n) => vec![
-                    MOV.op1(register::RAX)
-                        .op1(n.value as u64),
+                    MOV.op1(register::RAX).op1(n.value as u64),
                     PUSH.op1(register::RAX),
                 ],
             },
@@ -253,10 +259,7 @@ fn allocate_stack(literals: &BTreeMap<ast::Ident, Data>) -> Vec<Mnemonic> {
     }
 
     if result.len() % 4 != 0 {
-        result.push(
-            SUB.op1(register::RSP)
-                .op2(8_u32),
-        );
+        result.push(SUB.op1(register::RSP).op2(8_u32));
     }
     result
 }
@@ -270,10 +273,7 @@ fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
             for (i, c) in substr.iter().enumerate() {
                 value += (*c as u64) << (8 * i)
             }
-            acc.push(
-                MOV.op1(register::RAX)
-                    .op2(value),
-            );
+            acc.push(MOV.op1(register::RAX).op2(value));
             acc.push(PUSH.op1(register::RAX));
             acc
         })
