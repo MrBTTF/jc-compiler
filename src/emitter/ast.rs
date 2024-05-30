@@ -2,7 +2,7 @@ use std::{fmt::Display, mem};
 
 pub struct StatementList(pub Vec<Statement>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
     Assignment(Assignment),
@@ -36,15 +36,16 @@ impl TryFrom<&str> for AssignmentType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 
 pub struct Assignment(pub Ident, pub Expression, pub AssignmentType);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Ident(Ident),
     Literal(Literal),
     Call(Ident, Box<Expression>),
+    Loop(Loop),
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +71,14 @@ pub struct Ident {
 #[derive(Debug, Clone, Copy)]
 pub struct Number {
     pub value: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct Loop {
+    pub var: String,
+    pub start: u64,
+    pub end: u64,
+    pub body: Vec<Statement>,
 }
 
 pub trait Visitor<T> {

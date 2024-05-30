@@ -2,26 +2,61 @@ pub mod ast_printer;
 
 use crate::{
     emitter::ast::{self, StatementList},
-    lexer::token::Token,
+    lexer::token::{self, Token},
 };
 
 /*
+block := { statement_list  }
 statement_list := statement*
 statement := assignment | expression
 assignment := ("let" | "const") ident "=" expression
-expression := literal | ident | call
+expression := literal | ident | call | loop
+loop := "for" ident..ident block
 call := ident(expression)
 literal := string | number
 string := . ident
- */
+*/
 
-fn statement(tokens: &[Token]) -> Option<ast::Statement> {
-    assignment(tokens)
-        .map(ast::Statement::Assignment)
-        .or(expression(tokens).map(ast::Statement::Expression))
+fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
+    if tokens.first().unwrap() != &Token::BlockStart {
+        return (vec![], tokens);
+    }
+    let tokens = skip(&tokens[1..], Token::StatementEnd);
+
+    let mut result = vec![];
+    let (mut stmt, mut tokens) = statement(tokens);
+    while stmt.is_some() {
+        // dbg!(&stmt);
+
+        // panic!("stop");
+        assert_eq!(
+            tokens.first().unwrap(),
+            &Token::StatementEnd,
+            "statement end not reached"
+        );
+        if let Some(s) = stmt {
+            result.push(s)
+        }
+        (stmt, tokens) = statement(&tokens[1..]);
+    }
+    let tokens = &tokens[1..];
+    (result, tokens)
 }
 
-fn assignment(tokens: &[Token]) -> Option<ast::Assignment> {
+fn statement(tokens: &[Token]) -> (Option<ast::Statement>, &[Token]) {
+    if let (Some(assgn), tokens) = assignment(tokens) {
+        (Some(ast::Statement::Assignment(assgn)), &tokens)
+    } else if let (Some(expr), tokens) = expression(tokens) {
+        (Some(ast::Statement::Expression(expr)), tokens)
+    } else {
+        (None, tokens)
+    }
+}
+
+fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {
+    if tokens.len() < 3 {
+        return (None, tokens);
+    }
     let (assign_type, id) = match &tokens[..3] {
         [Token::Ident(keyword), Token::Ident(id), Token::Equal]
             if matches!(keyword.as_str(), "let" | "const") =>
@@ -29,32 +64,69 @@ fn assignment(tokens: &[Token]) -> Option<ast::Assignment> {
             if let Ok(assign_type) = keyword.as_str().try_into() {
                 (assign_type, ident(id))
             } else {
-                return None;
+                return (None, tokens);
             }
         }
-        _ => return None,
+        _ => return (None, tokens),
     };
-    let expr = expression(&tokens[3..]);
-    expr.map(|expr| ast::Assignment(id, expr, assign_type))
+    let (expr, tokens) = expression(&tokens[3..]);
+    if let Some(expr) = expr {
+        (Some(ast::Assignment(id, expr, assign_type)), tokens)
+    } else {
+        (None, tokens)
+    }
 }
 
-fn expression(tokens: &[Token]) -> Option<ast::Expression> {
-    if let Some(literal) = literal(tokens) {
-        return Some(ast::Expression::Literal(literal));
-    } else if let [Token::Ident(id)] = tokens {
-        return Some(ast::Expression::Ident(ident(id)));
-    } else if let Some((id, expr)) = call(tokens) {
-        return Some(ast::Expression::Call(id, Box::new(expr)));
+fn expression(tokens: &[Token]) -> (Option<ast::Expression>, &[Token]) {
+    if let (Some((id, expr)), tokens) = call(tokens) {
+        return (Some(ast::Expression::Call(id, Box::new(expr))), tokens);
+    } else if let (Some(l), tokens) = _loop(tokens) {
+        return (Some(ast::Expression::Loop(l)), tokens);
+    } else if let (Some(literal), tokens) = literal(tokens) {
+        return (Some(ast::Expression::Literal(literal)), tokens);
+    } else if let [Token::Ident(id), ..] = tokens {
+        return (Some(ast::Expression::Ident(ident(id))), &tokens[1..]);
     }
-    None
+    (None, tokens)
     // panic!("invalid expression: {:?}", &tokens)
 }
 
-fn literal(tokens: &[Token]) -> Option<ast::Literal> {
+fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {
+    if let Token::Ident(id) = &tokens[0] {
+        if id != "for" {
+            return (None, tokens);
+        }
+    }
+
+    let (var, start, end, statements) = match &tokens[1..] {
+        [Token::Ident(var), Token::Ident(_), Token::Number(start), Token::Range, Token::Number(end), statements @ ..] => {
+            (var.clone(), *start as u64, *end as u64, statements)
+        }
+        _ => return (None, tokens),
+    };
+
+    let (body, tokens) = block(statements);
+
+    (
+        Some(ast::Loop {
+            var,
+            start,
+            end,
+            body,
+        }),
+        tokens,
+    )
+}
+
+fn literal(tokens: &[Token]) -> (Option<ast::Literal>, &[Token]) {
     match tokens {
-        [Token::String(s)] => Some(ast::Literal::String(string(s))),
-        [Token::Number(num)] => Some(ast::Literal::Number(number(num))),
-        _ => None,
+        [Token::String(s), Token::StatementEnd, ..] => {
+            (Some(ast::Literal::String(string(s))), &tokens[1..])
+        }
+        [Token::Number(num), Token::StatementEnd, ..] => {
+            (Some(ast::Literal::Number(number(num))), &tokens[1..])
+        }
+        _ => (None, tokens),
     }
 }
 
@@ -74,26 +146,39 @@ fn number(number: &i64) -> ast::Number {
     }
 }
 
-fn call(tokens: &[Token]) -> Option<(ast::Ident, ast::Expression)> {
+fn call(tokens: &[Token]) -> (Option<(ast::Ident, ast::Expression)>, &[Token]) {
     let id: ast::Ident = {
         let Token::Ident(id) = &tokens[0] else {
-            return None;
+            return (None, tokens);
         };
         ident(id)
     };
 
-    let tokens = match &tokens[..2] {
+    let arg_tokens = match &tokens[..2] {
         [Token::Ident(_), Token::LeftP] => &tokens[2..],
-        _ => return None,
+        _ => return (None, tokens),
     };
-    if tokens.last().unwrap() != &Token::RightP {
-        return None;
-    }
-    expression(&tokens[..tokens.len() - 1]).map(|expr| (id, expr))
+
+    let (expr, rest_tokens) = expression(arg_tokens);
+    assert_eq!(rest_tokens.first().unwrap(), &Token::RightP, "expected )");
+
+    (expr.map(|expr| (id, expr)), &rest_tokens[1..])
 }
 
-pub fn parse(tokens: Vec<Vec<Token>>) -> StatementList {
-    let statment_list: Vec<Option<ast::Statement>> =
-        tokens.iter().map(|line| statement(line)).collect();
-    StatementList(statment_list.into_iter().flatten().collect())
+pub fn parse(tokens: Vec<Token>) -> StatementList {
+    let (statment_list, tokens) = block(&tokens);
+    assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
+    StatementList(statment_list.into_iter().collect())
+}
+
+fn skip(tokens: &[Token], to_skip: Token) -> &[Token] {
+    if let Some(t) = tokens.first() {
+        if *t == to_skip {
+            &tokens[1..]
+        } else {
+            tokens
+        }
+    } else {
+        tokens
+    }
 }

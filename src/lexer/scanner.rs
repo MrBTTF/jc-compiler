@@ -24,6 +24,8 @@ fn operator(s: &str) -> (Option<Token>, usize) {
         '=' => (Some(Token::Equal), 1),
         '(' => (Some(Token::LeftP), 1),
         ')' => (Some(Token::RightP), 1),
+        '{' => (Some(Token::BlockStart), 1),
+        '}' => (Some(Token::BlockEnd), 1),
         _ => (None, 0),
     }
 }
@@ -66,6 +68,14 @@ fn number(s: &str) -> (Option<Token>, usize) {
     (token, i)
 }
 
+fn range(s: &str) -> (Option<Token>, usize) {
+    if s.len() > 1 && &s[..2] == ".." {
+        (Some(Token::Range), 2)
+    } else {
+        (None, 0)
+    }
+}
+
 fn identifier(s: &str) -> (Option<Token>, usize) {
     if !s.chars().next().unwrap().is_alphabetic() {
         return (None, 0);
@@ -83,7 +93,9 @@ fn identifier(s: &str) -> (Option<Token>, usize) {
 type Parser = fn(&str) -> (Option<Token>, usize);
 
 fn scan_token(s: &str) -> (Option<Token>, usize) {
-    let parsers: Vec<Parser> = vec![newline, operator, string, number, identifier, whitespace];
+    let parsers: Vec<Parser> = vec![
+        newline, operator, range, string, number, identifier, whitespace,
+    ];
     for (_i, parser) in parsers.iter().enumerate() {
         let (token, advanced) = parser(s);
         // dbg!(i, &token, advanced);
@@ -95,8 +107,8 @@ fn scan_token(s: &str) -> (Option<Token>, usize) {
     panic!("Invalid lexeme")
 }
 
-pub fn scan(source_code: String) -> Vec<Vec<Token>> {
-    let mut tokens: Vec<Vec<Token>> = vec![];
+pub fn scan(source_code: String) -> Vec<Token> {
+    let mut tokens: Vec<Token> = vec![Token::BlockStart];
     for line in source_code.lines() {
         let mut start = 0;
         let mut line_tokens: Vec<Token> = vec![];
@@ -110,8 +122,9 @@ pub fn scan(source_code: String) -> Vec<Vec<Token>> {
             }
             start += advanced;
         }
-        tokens.push(line_tokens.clone());
+        tokens.extend(line_tokens.clone());
+        tokens.push(Token::StatementEnd);
     }
-
+    tokens.push(Token::BlockEnd);
     tokens
 }
