@@ -1,0 +1,9 @@
+let a = .repeat\n
+for i in 0..5 {
+    print(a)
+}
+
+let b = .test\n
+for i in 0..5 {
+    print(b)
+}
