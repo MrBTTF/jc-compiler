@@ -55,7 +55,12 @@ impl DataBuilder {
 
     fn visit_statement(&mut self, statement: &ast::Statement) {
         match statement {
-            ast::Statement::Expression(_) => (),
+            ast::Statement::Expression(expr) => {
+                match expr {
+                    ast::Expression::Loop(l) => (),
+                    _ => ()
+                }
+            },
             ast::Statement::Assignment(ast::Assignment(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
                     let data_loc: usize = match assign_type {

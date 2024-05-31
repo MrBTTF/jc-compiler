@@ -233,10 +233,24 @@ impl ExeEmitter {
     }
 
     fn visit_loop(&mut self, l: &ast::Loop) {
-        // self.code_context.add(mnemonic);
+        self.code_context.add(PUSH.op1(register::RCX));
+
+        self.code_context.add(XOR.op1(register::RCX).op2(register::RCX));
+
+        let offset = self.code_context.get_code_size();
+
+        self.code_context.add(PUSH.op1(register::RCX));
         l.body.iter().for_each(|stmt| {
             self.visit_statement(stmt);
         });
+        self.code_context.add(POP.op1(register::RCX));
+        self.code_context.add(INC.op1(register::RCX));
+        self.code_context.add(CMP.op1(register::RCX).op2(l.end as u32));
+
+        let jump = JL.op1(Operand::Offset32(-(0 as i32))).as_vec().len() + self.code_context.get_code_size() - offset;
+        dbg!(jump);
+        self.code_context.add(JL.op1(Operand::Offset32(-(jump as i32))));
+        self.code_context.add(POP.op1(register::RCX));
     }
 }
 
