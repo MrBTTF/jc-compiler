@@ -245,4 +245,25 @@ mod tests {
         );
         assert_eq_hex(code.to_bin(), expected);
     }
+
+
+
+
+    #[rstest]
+    fn test_loop_with_stack() {
+        let mut code = CodeContext::new();
+        code.add_slice(&[
+            INC.op1(register::RCX).disp(Offset32(0xFFFF)),
+            CMP.op1(register::RCX).op2(0x32000_u32).disp(Offset32(0xFFFF)),
+            JL.op1(Operand::Offset32(-0x18)),
+        ]);
+        let expected = compile_asm(
+            "
+         loop1:    inc qword [rcx+0xFFFF]
+                   cmp qword [rcx+0xFFFF], 0x32000
+                   jl 0x0   ; Loop while less or equal
+        ",
+        );
+        assert_eq_hex(code.to_bin(), expected);
+    }
 }

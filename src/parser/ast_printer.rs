@@ -33,7 +33,7 @@ impl Visitor<String> for AstPrinter {
                 s1 + "(" + &s2 + ")"
             }
             Expression::Loop(l) => {
-                let s = format!("for {} in {}..{}", l.var, l.start, l.end);
+                let s = format!("for {} in {}..{}", l.var.value, l.start, l.end);
                 let body = self.visit_statement_list(&StatementList(l.body.clone()));
 
                 s + " {\n" + &body + "\n}\n"

@@ -1,9 +1,7 @@
-let a = .repeat\n
+let info1 = .Loop starts\n
+print(info1)
 for i in 0..5 {
-    print(a)
+    print(i)
 }
-
-let b = .test\n
-for i in 0..5 {
-    print(b)
-}
+let info2 = .\nLoop ends\n
+print(info2)

@@ -4,6 +4,7 @@ use crate::emitter::{
     ast::{self, AssignmentType},
     data::{Data, DataRef},
 };
+use crate::emitter::ast::Literal;
 
 use super::super::{mnemonics::*, structs::CodeContext};
 
@@ -47,10 +48,7 @@ pub fn push_args(
                         MOV.op1(ARG_REGISTERS[i])
                             .op2(arg.data_loc()),
                     )
-                    .with_const_data(match &arg.lit {
-                        ast::Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-                        ast::Literal::Number(_) => b"%d\0".to_vec(),
-                    });
+                    .with_const_data(arg.lit.as_vec());
             }
         }
     });

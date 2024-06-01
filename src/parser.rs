@@ -110,7 +110,7 @@ fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {
 
     (
         Some(ast::Loop {
-            var,
+            var: ast::Ident{value: var},
             start,
             end,
             body,

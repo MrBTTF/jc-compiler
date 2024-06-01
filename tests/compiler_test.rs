@@ -30,5 +30,8 @@ fn test_hello() {
 fn test_loop() {
     let src = "loop";
     let output = compile_src(&src);
-    assert_eq!(&output, "repeat\r\nrepeat\r\nrepeat\r\nrepeat\r\nrepeat\r\ntest\r\ntest\r\ntest\r\ntest\r\ntest\r\n")
+    assert_eq!(&output, "Loop starts\r
+01234\r
+Loop ends\r
+")
 }

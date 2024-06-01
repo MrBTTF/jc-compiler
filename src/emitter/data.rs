@@ -1,7 +1,5 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    ffi::CString,
-};
+use std::{collections::{BTreeMap, HashMap}, ffi::CString, mem};
+use crate::emitter::ast::{Ident, Literal, Loop};
 
 use super::{
     ast::{self, AssignmentType},
@@ -40,6 +38,7 @@ impl Data {
 #[derive(Default, Debug)]
 pub struct DataBuilder {
     pub variables: BTreeMap<ast::Ident, Data>,
+    pub data_ordered: Vec<ast::Ident>,
     data_section: Vec<usize>,
     stack: Vec<usize>,
     current_line: usize,
@@ -47,6 +46,18 @@ pub struct DataBuilder {
 
 impl DataBuilder {
     pub fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
+        let lit = Literal::String("%d\0".to_string());
+        let lit_size = lit.len();
+        self.data_section.push(lit.len());
+        let id = Ident{
+            value: "__printf_d_arg".to_string(),
+        };
+        self.variables.insert(
+            id.clone(),
+            Data::new(lit, lit_size as DWord, AssignmentType::Const),
+        );
+        self.data_ordered.push(id.clone());
+
         statement_list
             .0
             .iter()
@@ -57,7 +68,7 @@ impl DataBuilder {
         match statement {
             ast::Statement::Expression(expr) => {
                 match expr {
-                    ast::Expression::Loop(l) => (),
+                    ast::Expression::Loop(l) => self.visit_loop(l),
                     _ => ()
                 }
             },
@@ -79,10 +90,13 @@ impl DataBuilder {
                             data_loc
                         }
                     };
+                    let data = Data::new(lit.clone(), data_loc as DWord, *assign_type);
                     self.variables.insert(
                         id.clone(),
-                        Data::new(lit.clone(), data_loc as DWord, *assign_type),
+                        data.clone(),
                     );
+                    self.data_ordered.push(id.clone());
+
                 }
                 _ => todo!(),
             },
@@ -91,6 +105,26 @@ impl DataBuilder {
     }
 
     // fn visit_assignment(&mut self, statement: &ast::Statement) {}
+    fn visit_loop(&mut self, l: &Loop) {
+       let id = &l.var;
+       let lit = Literal::Number(ast::Number{value: l.start as i64});
+       let data_loc: usize = {
+           let mut data_size = lit.len();
+           let remainder = data_size % 8;
+           if remainder != 0 {
+               data_size += 8 - remainder;
+           }
+           self.stack.push(data_size);
+           self.stack.iter().sum()
+       };
+
+        let data=  Data::new(lit, data_loc as DWord, ast::AssignmentType::Let);
+        self.variables.insert(
+            id.clone(),
+            data.clone(),
+        );
+        self.data_ordered.push(id.clone());
+    }
 }
 
 pub fn build_data_section(literals: HashMap<ast::Ident, Data>) -> Vec<u8> {

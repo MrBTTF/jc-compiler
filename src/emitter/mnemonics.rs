@@ -78,7 +78,8 @@ pub mod register {
         SI = (0x6),
         DI = (0x7),
         R8 = (0x0, ext),
-        R9 = (0x1, ext)
+        R9 = (0x1, ext),
+        R10 = (0x2, ext)
     );
 
     // const AX: Register = Register::new(0x0, RegisterSize::W, false);
@@ -187,6 +188,7 @@ pub enum OperandEncoding {
     RM,
     MI,
     OI,
+    M,
     I,
     D,
 }
@@ -201,7 +203,7 @@ pub struct Mnemonic {
     opcodes: HashMap<OperandEncoding, u8>,
     op1: Operand,
     op2: Operand,
-    op3: Operand,
+    disp: Operand,
     symbol: Option<String>,
     value_loc: usize,
 }
@@ -220,7 +222,7 @@ impl Display for Mnemonic {
             opcodes:{{ {opcodes} }},
             op1: {},
             op2: {},
-            op3: {},
+            disp: {},
             symbol: {:?},
             value_loc: {},
         }}",
@@ -230,7 +232,7 @@ impl Display for Mnemonic {
             self.rm,
             self.op1,
             self.op2,
-            self.op3,
+            self.disp,
             self.symbol,
             self.value_loc,
         )
@@ -248,7 +250,7 @@ impl Mnemonic {
             rm: 0,
             op1: Operand::None,
             op2: Operand::None,
-            op3: Operand::None,
+            disp: Operand::None,
             symbol: None,
             value_loc: 0,
         }
@@ -325,12 +327,12 @@ impl Mnemonic {
         cloned
     }
 
-    pub fn op3(&self, op: Operand) -> Self {
-        if self.op3 != Operand::None {
-            panic!("op3 is already assigned")
+    pub fn disp(&self, op: impl Into<Operand>) -> Self {
+        if self.disp != Operand::None {
+            panic!("disp is already assigned")
         }
         let mut cloned = self.clone();
-        cloned.op3 = op;
+        cloned.disp = op.into();
         cloned
     }
 
@@ -378,7 +380,7 @@ impl Mnemonic {
                         );
                         operand_enc = Some(OperandEncoding::RM);
 
-                        _mod = match self.op3 {
+                        _mod = match self.disp {
                             Operand::Offset8(_) => MOD_DISP8,
                             Operand::Offset32(_) => MOD_DISP32,
                             _ => {
@@ -396,6 +398,8 @@ impl Mnemonic {
                         if let Some(oi_opcode) = self.opcodes.get_mut(&OperandEncoding::OI) {
                             *oi_opcode += dst.code;
                             operand_enc = Some(OperandEncoding::OI);
+                        } else if self.opcodes.get_mut(&OperandEncoding::M).is_some()  {
+                            operand_enc = Some(OperandEncoding::M);
                         } else {
                             operand_enc = Some(OperandEncoding::MI);
                         }
@@ -437,13 +441,40 @@ impl Mnemonic {
                 let mod_rm = _mod << 6 | rm << 3 | reg;
                 result.extend(mod_rm.to_le_bytes());
                 self.value_loc = result.len();
-                match self.op3 {
-                    Operand::Offset8(_) | Operand::Offset32(_) => result.extend(self.op3.as_vec()),
+                match self.disp {
+                    Operand::Offset8(_) | Operand::Offset32(_) => result.extend(self.disp.as_vec()),
+                    _ => (),
+                }
+            }
+            OperandEncoding::M => {
+                _mod = match self.disp {
+                    Operand::Offset8(_) => MOD_DISP8,
+                    Operand::Offset32(_) => MOD_DISP32,
+                    _ => {
+                        MOD_REG
+                    }
+                };
+                let mod_rm = _mod << 6 | reg << 3 | rm;
+                result.extend(mod_rm.to_le_bytes());
+                self.value_loc = result.len();
+                match self.disp {
+                    Operand::Offset8(_) | Operand::Offset32(_) => result.extend(self.disp.as_vec()),
                     _ => (),
                 }
             }
             OperandEncoding::MI => {
+                _mod = match self.disp {
+                    Operand::Offset8(_) => MOD_DISP8,
+                    Operand::Offset32(_) => MOD_DISP32,
+                    _ => {
+                        MOD_REG
+                    }
+                };
+                let mod_rm = _mod << 6 | reg << 3 | rm;
                 result.extend(mod_rm.to_le_bytes());
+                if let Operand::Offset8(_) | Operand::Offset32(_) = self.disp {
+                    result.extend(self.disp.as_vec())
+                }
                 if self.op2.is_imm() {
                     self.value_loc = result.len();
                     result.extend(self.op2.as_vec());
@@ -519,7 +550,7 @@ lazy_static! {
         .opcode(0xF7, OperandEncoding::MI)
         .reg(6);
     pub static ref INC: Mnemonic = Mnemonic::new(MnemonicName::Inc)
-        .opcode(0xFF, OperandEncoding::MI)
+        .opcode(0xFF, OperandEncoding::M)
         .reg(0);
     pub static ref XOR: Mnemonic = Mnemonic::new(MnemonicName::Xor)
         .opcode(0x31, OperandEncoding::MR)
@@ -609,7 +640,7 @@ mod tests {
         #[case] op3: Operand,
         #[case] expected: Vec<u8>,
     ) {
-        let mut instruction = MOV.op1(op1).op2(op2).op3(op3);
+        let mut instruction = MOV.op1(op1).op2(op2).disp(op3);
         assert_eq!(instruction.as_vec(), expected);
     }
 
@@ -663,6 +694,21 @@ mod tests {
         let mut instruction = DIV.op1(op1);
         assert_eq!(instruction.as_vec(), expected);
     }
+
+    #[rstest]
+    #[case::Rcx(register::RCX, vec ! [0x48, 0xFF, 0xC1])]
+    fn test_inc(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
+        let mut instruction = INC.op1(op1);
+        assert_eq!(instruction.as_vec(), expected);
+    }
+
+    #[rstest]
+    #[case::Rcx(register::RCX, Operand::Offset32(0xFFFF), vec ! [0x48, 0xFF, 0x81, 0xFF, 0xFF, 0x0, 0x0])]
+    fn test_inc_offset(#[case] op1: impl Into<Operand>, #[case] disp: impl Into<Operand>, #[case] expected: Vec<u8>) {
+        let mut instruction = INC.op1(op1).disp(disp);
+        assert_eq!(instruction.as_vec(), expected);
+    }
+
 
     #[rstest]
     #[case::Offset32(Operand::Offset32(0xABCDEF1), vec ! [0xE8, 0xF1, 0xDE, 0xBC, 0x0A])]
