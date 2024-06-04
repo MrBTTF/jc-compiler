@@ -1,7 +1,7 @@
-let info1 = .Loop starts\n
-print(info1)
+let info = .Loop starts\n
+print(info)
 for i in 0..5 {
     print(i)
 }
-let info2 = .\nLoop ends\n
-print(info2)
+info = .\nLoop ends\n
+print(info)

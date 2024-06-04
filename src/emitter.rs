@@ -5,5 +5,5 @@ mod data;
 pub mod elf;
 pub mod exe;
 pub mod stdlib;
-pub mod structs;
+pub mod code_context;
 mod mnemonics;

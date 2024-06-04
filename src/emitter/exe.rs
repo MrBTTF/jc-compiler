@@ -1,12 +1,13 @@
 mod defs;
 pub mod sections;
 
-use std::{collections::BTreeMap, env, fs, io::Write, time::SystemTime};
+use std::{collections::BTreeMap, env, fs, io::Write, mem, time::SystemTime};
 
 use sections::*;
 
-use super::{ast::AssignmentType, stdlib::windows as stdlib};
+use super::{stdlib::windows as stdlib};
 use crate::emitter::abi::windows as abi;
+use crate::emitter::ast::{DeclarationType, Expression, Literal};
 use crate::emitter::elf::sections::DWord;
 
 use self::defs::*;
@@ -15,7 +16,7 @@ use super::{
     ast,
     data::{Data, DataBuilder},
     mnemonics::*,
-    structs::{CodeContext, Sliceable},
+    code_context::{CodeContext, Sliceable},
 };
 
 pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
@@ -139,7 +140,7 @@ pub fn build_exe(ast: &ast::StatementList, output_path: &str) {
         data_section.get_header(),
         relocation_section.get_header(),
     ]
-    .concat();
+        .concat();
 
     let mut file = fs::File::create(output_path).unwrap();
     write_all_aligned(&mut file, &headers).unwrap();
@@ -191,7 +192,10 @@ impl ExeEmitter {
             ast::Statement::Expression(expr) => {
                 self.visit_expression(expr);
             }
-            ast::Statement::Assignment(_) => (),
+            ast::Statement::Declaration(_) => (),
+            ast::Statement::Assignment(assign) => {
+                self.visit_assignment(assign);
+            }
         };
     }
 
@@ -205,6 +209,50 @@ impl ExeEmitter {
         }
     }
 
+    fn visit_assignment(&mut self, assign: &ast::Assignment) {
+        let ast::Assignment(id, expr) = assign;
+
+        match expr {
+            Expression::Literal(lit) => {
+                let values = match lit {
+                    Literal::String(s) => str_to_u64(s),
+                    Literal::Number(n) => vec![n.value as u64],
+                };
+
+                let data = self
+                    .literals
+                    .get_mut(id)
+                    .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
+                if data.decl_type == DeclarationType::Const {
+                    panic!("Cannot assign to const data: {data:#?}");
+                }
+                data.lit = lit.clone();
+
+                let assign_at_stack_location = values.iter().enumerate().fold(vec![], |mut acc: Vec<Mnemonic>, (i, v)| {
+                    acc.push(MOV.op1(register::RAX).op2(*v));
+                    acc.push(PUSH.op1(register::RAX));
+                    acc
+                });
+
+                self.code_context.add_slice(&[
+                    PUSH.op1(register::RAX),
+                    PUSH.op1(register::RBX),
+                    MOV.op1(register::RBX).op2(register::RSP),
+                    MOV.op1(register::RSP).op2(register::RBP),
+                ]);
+                self.code_context.add_slice(assign_at_stack_location.as_slice());
+                self.code_context.add_slice(&[
+                    MOV.op1(register::RSP).op2(register::RBX),
+                    POP.op1(register::RBX),
+                    POP.op1(register::RAX)
+                ]);
+            }
+            Expression::Ident(_) => todo!(),
+            Expression::Call(_, _) => todo!(),
+            Expression::Loop(_) => todo!(),
+        };
+    }
+
     fn visit_call(&mut self, id: &ast::Ident, expr: &ast::Expression) {
         let data = match expr {
             ast::Expression::Ident(id) => self
@@ -215,7 +263,6 @@ impl ExeEmitter {
         };
 
         if id.value == "print" {
-
             match data.lit {
                 ast::Literal::String(_) => {
                     let args = &[data.clone()];
@@ -224,24 +271,22 @@ impl ExeEmitter {
                     stdlib::print(&mut self.code_context);
 
                     abi::pop_args(&mut self.code_context, args.len());
-
                 }
                 ast::Literal::Number(n) => {
                     let format = self
                         .literals
-                        .get(&ast::Ident{
+                        .get(&ast::Ident {
                             value: "__printf_d_arg".to_string(),
                         })
                         .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
 
-                    let args = &[format.clone() ,data.clone()];
+                    let args = &[format.clone(), data.clone()];
 
                     abi::push_args(&mut self.code_context, args);
 
                     stdlib::printd(&mut self.code_context);
 
                     abi::pop_args(&mut self.code_context, args.len());
-
                 }
             };
 
@@ -256,7 +301,7 @@ impl ExeEmitter {
             .literals
             .get(&l.var)
             .unwrap_or_else(|| panic!("undefined variable: {}", l.var.value)).clone();
-        
+
         let offset = self.code_context.get_code_size();
 
         l.body.iter().for_each(|stmt| {
@@ -270,7 +315,6 @@ impl ExeEmitter {
         let jump = JL.op1(Operand::Offset32(-(0 as i32))).as_vec().len() + self.code_context.get_code_size() - offset;
         dbg!(jump);
         self.code_context.add(JL.op1(Operand::Offset32(-(jump as i32))));
-
     }
 
 
@@ -278,18 +322,18 @@ impl ExeEmitter {
         let mut result = vec![];
         for id in self.data_ordered.iter() {
             let data = self.literals.get(id).unwrap();
-            if data.assign_type == AssignmentType::Const {
+            if data.decl_type == ast::DeclarationType::Const {
                 continue;
             }
-            result.extend(match data.assign_type {
-                AssignmentType::Let => match &data.lit {
+            result.extend(match data.decl_type {
+                ast::DeclarationType::Let => match &data.lit {
                     ast::Literal::String(s) => push_string_on_stack(s),
                     ast::Literal::Number(n) => vec![
                         MOV.op1(register::RAX).op2(n.value as u64),
                         PUSH.op1(register::RAX),
                     ],
                 },
-                AssignmentType::Const => vec![],
+                ast::DeclarationType::Const => vec![],
             });
         }
 
@@ -298,20 +342,26 @@ impl ExeEmitter {
         }
         result
     }
-
 }
 
-fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
+fn str_to_u64(s: &str) -> Vec<u64> {
     s.as_bytes()
         .chunks(8)
         .rev()
-        .fold(vec![], |mut acc: Vec<Mnemonic>, substr| {
+        .fold(vec![], |mut acc: Vec<u64>, substr| {
             let mut value: u64 = 0;
             for (i, c) in substr.iter().enumerate() {
                 value += (*c as u64) << (8 * i)
             }
-            acc.push(MOV.op1(register::RAX).op2(value));
-            acc.push(PUSH.op1(register::RAX));
+            acc.push(value);
             acc
         })
+}
+
+fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
+    str_to_u64(s).iter().fold(vec![], |mut acc: Vec<Mnemonic>, value| {
+        acc.push(MOV.op1(register::RAX).op2(*value));
+        acc.push(PUSH.op1(register::RAX));
+        acc
+    })
 }

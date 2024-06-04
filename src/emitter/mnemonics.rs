@@ -539,6 +539,8 @@ lazy_static! {
         .opcode(0x89, OperandEncoding::MR)
         .opcode(0x8B, OperandEncoding::RM)
         .opcode(0xB8, OperandEncoding::OI);
+    pub static ref MOV_MI: Mnemonic = Mnemonic::new(MnemonicName::Mov)
+        .opcode(0xC7, OperandEncoding::MI).reg(0);
     pub static ref ADD: Mnemonic = Mnemonic::new(MnemonicName::Add)
         .opcode(0x01, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI);

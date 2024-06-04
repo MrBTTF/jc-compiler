@@ -5,7 +5,7 @@ use std::{
 
 use crate::emitter::{
     data::DataRef,
-    structs::{CodeContext, Sliceable},
+    code_context::{CodeContext, Sliceable},
 };
 
 use super::defs::*;

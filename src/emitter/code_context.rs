@@ -160,7 +160,7 @@ mod tests {
 
     use rstest::*;
 
-    use crate::emitter::{mnemonics::*, structs::CodeContext};
+    use crate::emitter::{mnemonics::*, code_context::CodeContext};
     use crate::emitter::mnemonics::Operand::Offset32;
 
     fn compile_asm(code: &str) -> Vec<u8> {
@@ -223,7 +223,6 @@ mod tests {
         );
         assert_eq_hex(code.to_bin(), expected);
     }
-
 
 
     #[rstest]

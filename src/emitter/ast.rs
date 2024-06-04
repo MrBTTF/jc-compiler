@@ -5,31 +5,32 @@ pub struct StatementList(pub Vec<Statement>);
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
+    Declaration(Declaration),
     Assignment(Assignment),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssignmentType {
+pub enum DeclarationType {
     Let,
     Const,
 }
-impl Display for AssignmentType {
+impl Display for DeclarationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AssignmentType::Let => write!(f, "let"),
-            AssignmentType::Const => write!(f, "const"),
+            DeclarationType::Let => write!(f, "let"),
+            DeclarationType::Const => write!(f, "const"),
         }
     }
 }
 
-impl TryFrom<&str> for AssignmentType {
+impl TryFrom<&str> for DeclarationType {
     type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         if s == "let" {
-            Ok(AssignmentType::Let)
+            Ok(DeclarationType::Let)
         } else if s == "const" {
-            Ok(AssignmentType::Const)
+            Ok(DeclarationType::Const)
         } else {
             Err(format!("invalid assignemnt type: {s}"))
         }
@@ -38,7 +39,11 @@ impl TryFrom<&str> for AssignmentType {
 
 #[derive(Debug, Clone)]
 
-pub struct Assignment(pub Ident, pub Expression, pub AssignmentType);
+pub struct Declaration(pub Ident, pub Expression, pub DeclarationType);
+
+#[derive(Debug, Clone)]
+
+pub struct Assignment(pub Ident, pub Expression);
 
 #[derive(Debug, Clone)]
 pub enum Expression {

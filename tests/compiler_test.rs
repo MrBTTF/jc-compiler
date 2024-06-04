@@ -35,3 +35,14 @@ fn test_loop() {
 Loop ends\r
 ")
 }
+
+
+#[test]
+fn test_assignment() {
+    let src = "assignment";
+    let output = compile_src(&src);
+    assert_eq!(&output, "Test\r
+1234\r
+Value\r
+")
+}

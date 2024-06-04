@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use crate::emitter::{
-    ast::{self, AssignmentType},
+    ast::{self, DeclarationType},
     data::{Data, DataRef},
 };
 use crate::emitter::ast::Literal;
 
-use super::super::{mnemonics::*, structs::CodeContext};
+use super::super::{mnemonics::*, code_context::CodeContext};
 
 #[derive(Debug)]
 pub enum Arg {
@@ -16,9 +16,9 @@ pub enum Arg {
 
 impl From<Data> for Arg {
     fn from(data: Data) -> Self {
-        match data.assign_type {
-            ast::AssignmentType::Let => Arg::Stack(data.data_loc() as i64),
-            ast::AssignmentType::Const => Arg::Data(data.data_loc() as i64),
+        match data.decl_type {
+            ast::DeclarationType::Let => Arg::Stack(data.data_loc() as i64),
+            ast::DeclarationType::Const => Arg::Data(data.data_loc() as i64),
         }
     }
 }
@@ -31,8 +31,8 @@ pub fn push_args(
 ) {
     args.iter().enumerate().for_each(|(i, arg)| {
         code_context.add(PUSH.op1(ARG_REGISTERS[i]));
-        match arg.assign_type {
-            AssignmentType::Let => {
+        match arg.decl_type {
+            DeclarationType::Let => {
                 code_context.add(
                     MOV.op1(ARG_REGISTERS[i])
                         .op2(register::RBP),
@@ -42,7 +42,7 @@ pub fn push_args(
                         .op2(arg.data_loc() as u32),
                 );
             }
-            AssignmentType::Const => {
+            DeclarationType::Const => {
                 code_context
                     .add(
                         MOV.op1(ARG_REGISTERS[i])

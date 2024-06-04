@@ -8,8 +8,9 @@ use crate::{
 /*
 block := { statement_list  }
 statement_list := statement*
-statement := assignment | expression
-assignment := ("let" | "const") ident "=" expression
+statement := declaration | assignment | expression
+declaration := ("let" | "const") ident "=" expression
+assignment := ident "=" expression
 expression := literal | ident | call | loop
 loop := "for" ident..ident block
 call := ident(expression)
@@ -45,16 +46,18 @@ fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
 }
 
 fn statement(tokens: &[Token]) -> (Option<ast::Statement>, &[Token]) {
-    if let (Some(assgn), tokens) = assignment(tokens) {
+    if let (Some(decl), tokens) = declaration(tokens) {
+        (Some(ast::Statement::Declaration(decl)), &tokens)
+    } else if let (Some(assgn), tokens) = assignment(tokens) {
         (Some(ast::Statement::Assignment(assgn)), &tokens)
-    } else if let (Some(expr), tokens) = expression(tokens) {
+    }  else if let (Some(expr), tokens) = expression(tokens) {
         (Some(ast::Statement::Expression(expr)), tokens)
     } else {
         (None, tokens)
     }
 }
 
-fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {
+fn declaration(tokens: &[Token]) -> (Option<ast::Declaration>, &[Token]) {
     if tokens.len() < 3 {
         return (None, tokens);
     }
@@ -72,7 +75,23 @@ fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {
     };
     let (expr, tokens) = expression(&tokens[3..]);
     if let Some(expr) = expr {
-        (Some(ast::Assignment(id, expr, assign_type)), tokens)
+        (Some(ast::Declaration(id, expr, assign_type)), tokens)
+    } else {
+        (None, tokens)
+    }
+}
+
+fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {
+    if tokens.len() < 2 {
+        return (None, tokens);
+    }
+    let id = match &tokens[..2] {
+        [Token::Ident(id), Token::Equal] => ident(id),
+        _ => return (None, tokens),
+    };
+    let (expr, tokens) = expression(&tokens[2..]);
+    if let Some(expr) = expr {
+        (Some(ast::Assignment(id, expr)), tokens)
     } else {
         (None, tokens)
     }

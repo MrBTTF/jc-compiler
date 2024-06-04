@@ -1,6 +1,6 @@
 use std::{ffi::CString, mem};
 
-use crate::emitter::structs::Sliceable;
+use crate::emitter::code_context::Sliceable;
 
 use super::defs;
 

@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, mem};
 
-use crate::emitter::{abi::windows::ARG_REGISTERS, data, data::DataRef, mnemonics::*, structs::CodeContext};
-use crate::emitter::ast::AssignmentType;
+use crate::emitter::{abi::windows::ARG_REGISTERS, data, data::DataRef, mnemonics::*, code_context::CodeContext};
+use crate::emitter::ast::DeclarationType;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Io {
