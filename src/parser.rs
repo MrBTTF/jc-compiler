@@ -2,7 +2,7 @@ pub mod ast_printer;
 
 use crate::{
     emitter::ast::{self, StatementList},
-    lexer::token::{self, Token},
+    lexer::token::Token,
 };
 
 /*
@@ -39,7 +39,6 @@ fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
             result.push(s)
         }
         (stmt, tokens) = statement(&tokens[1..]);
-
     }
     let tokens = &tokens[1..];
     (result, tokens)
@@ -50,7 +49,7 @@ fn statement(tokens: &[Token]) -> (Option<ast::Statement>, &[Token]) {
         (Some(ast::Statement::Declaration(decl)), &tokens)
     } else if let (Some(assgn), tokens) = assignment(tokens) {
         (Some(ast::Statement::Assignment(assgn)), &tokens)
-    }  else if let (Some(expr), tokens) = expression(tokens) {
+    } else if let (Some(expr), tokens) = expression(tokens) {
         (Some(ast::Statement::Expression(expr)), tokens)
     } else {
         (None, tokens)
@@ -129,7 +128,7 @@ fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {
 
     (
         Some(ast::Loop {
-            var: ast::Ident{value: var},
+            var: ast::Ident { value: var },
             start,
             end,
             body,

@@ -4,8 +4,6 @@ use emitter::ast::Visitor;
 
 use parser::ast_printer::AstPrinter;
 
-use crate::emitter::exe::build_exe;
-
 mod emitter;
 mod lexer;
 mod parser;
@@ -20,5 +18,5 @@ fn main() {
     let output = AstPrinter {}.visit_statement_list(&ast);
     println!("{output}");
 
-    build_exe(&ast, &output_filename);
+    emitter::build_executable(&ast, &output_filename);
 }

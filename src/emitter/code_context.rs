@@ -5,7 +5,6 @@ use std::{
 
 use super::{
     data::DataRef,
-    exe::sections::IMAGE_BASE,
     mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP},
 };
 
@@ -16,16 +15,18 @@ pub struct CodeContext {
     offsets: Vec<usize>,
     calls: BTreeMap<String, Vec<usize>>,
     const_data: BTreeMap<usize, DataRef>,
+    image_base: u64,
 }
 
 impl CodeContext {
-    pub fn new() -> Self {
+    pub fn new(image_base: u64) -> Self {
         Self {
             instructions: vec![],
             pc: 0,
             offsets: vec![0],
             calls: BTreeMap::new(),
             const_data: BTreeMap::new(),
+            image_base,
         }
     }
 
@@ -123,7 +124,7 @@ impl CodeContext {
     pub fn compute_data(&mut self, data_section_start: u32, const_data: BTreeMap<usize, DataRef>) {
         let mut data_cursor = 0;
         for (line, data_ref) in const_data.iter() {
-            let address = IMAGE_BASE + data_section_start as u64 + data_cursor as u64;
+            let address = self.image_base + data_section_start as u64 + data_cursor as u64;
             // println!("address: {:0x}", address);
             self.get_mut(*line).set_op2(address);
             data_cursor += data_ref.data.len();
@@ -152,16 +153,15 @@ pub trait Sliceable: Sized {
 
 mod tests {
     use std::{
-        env,
         io::{Read, Write},
         process::Command,
     };
     use tempfile::NamedTempFile;
 
-    use rstest::*;
-
-    use crate::emitter::{mnemonics::*, code_context::CodeContext};
     use crate::emitter::mnemonics::Operand::Offset32;
+    use crate::emitter::{code_context::CodeContext, mnemonics::*};
+
+    use rstest::*;
 
     fn compile_asm(code: &str) -> Vec<u8> {
         let code = format!("[bits 64]\n{code}");
@@ -178,13 +178,16 @@ mod tests {
                 &src.path().as_os_str().to_str().unwrap(),
                 "-o",
                 &bin.path().to_str().unwrap(),
-
             ])
             .output()
             .unwrap();
 
         if !output.stderr.is_empty() {
-            panic!("{}",String::from_utf8(output.stderr).unwrap());
+            panic!(
+                "{}\n{}",
+                String::from_utf8(output.stderr).unwrap(),
+                String::from_utf8(output.stdout).unwrap()
+            );
         }
 
         let mut buf = vec![];
@@ -193,15 +196,23 @@ mod tests {
     }
 
     fn assert_eq_hex(actual: Vec<u8>, expected: Vec<u8>) {
-        let  hex_actual = actual.iter().map(|b| format!("{b:0x}")).collect::<Vec<String>>().join(",");
-        let hex_expected = expected.iter().map(|b| format!("{b:0x}")).collect::<Vec<String>>().join(",");
+        let hex_actual = actual
+            .iter()
+            .map(|b| format!("{b:0x}"))
+            .collect::<Vec<String>>()
+            .join(",");
+        let hex_expected = expected
+            .iter()
+            .map(|b| format!("{b:0x}"))
+            .collect::<Vec<String>>()
+            .join(",");
 
         assert_eq!(actual, expected, "[{hex_actual}] != [{hex_expected}]");
     }
 
     #[rstest]
     fn test_mov() {
-        let mut code = CodeContext::new();
+        let mut code = CodeContext::new(0);
         code.add_slice(&[
             MOV.op1(register::CX).op2(0xABCD_u16),
             MOV.op1(register::ECX).op2(0xABCDEF12_u32),
@@ -224,10 +235,9 @@ mod tests {
         assert_eq_hex(code.to_bin(), expected);
     }
 
-
     #[rstest]
     fn test_loop() {
-        let mut code = CodeContext::new();
+        let mut code = CodeContext::new(0);
         code.add_slice(&[
             XOR.op1(register::RCX).op2(register::RCX),
             INC.op1(register::RCX),
@@ -245,15 +255,14 @@ mod tests {
         assert_eq_hex(code.to_bin(), expected);
     }
 
-
-
-
     #[rstest]
     fn test_loop_with_stack() {
-        let mut code = CodeContext::new();
+        let mut code = CodeContext::new(0);
         code.add_slice(&[
             INC.op1(register::RCX).disp(Offset32(0xFFFF)),
-            CMP.op1(register::RCX).op2(0x32000_u32).disp(Offset32(0xFFFF)),
+            CMP.op1(register::RCX)
+                .op2(0x32000_u32)
+                .disp(Offset32(0xFFFF)),
             JL.op1(Operand::Offset32(-0x18)),
         ]);
         let expected = compile_asm(
@@ -265,4 +274,16 @@ mod tests {
         );
         assert_eq_hex(code.to_bin(), expected);
     }
+
+    // #[rstest]
+    // fn test_jmp() {
+    //     let mut code = CodeContext::new(0);
+    //     code.add_slice(&[JMP.op1(0xABCDEF_u32)]);
+    //     let expected = compile_asm(
+    //         "
+    //          JMP DWORD [0xABCDEF]
+    //     ",
+    //     );
+    //     assert_eq_hex(code.to_bin(), expected);
+    // }
 }

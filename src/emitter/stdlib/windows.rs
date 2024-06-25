@@ -1,7 +1,6 @@
-use std::{collections::BTreeMap, mem};
+use crate::emitter::{abi::windows::ARG_REGISTERS, code_context::CodeContext, mnemonics::*};
 
-use crate::emitter::{abi::windows::ARG_REGISTERS, data, data::DataRef, mnemonics::*, code_context::CodeContext};
-use crate::emitter::ast::DeclarationType;
+use crate::emitter::data::Data;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Io {
@@ -31,7 +30,7 @@ fn _print(code_context: &mut CodeContext) {
     ]);
 }
 
-pub fn print(code_context: &mut CodeContext) {
+pub fn print(code_context: &mut CodeContext, data: Data) {
     code_context.add(MOV.op1(register::R8).op2(ARG_REGISTERS[0]));
     _get_io_handle(code_context, Io::Stdout);
     _print(code_context);

@@ -127,6 +127,7 @@ impl Operand {
 
     pub fn as_vec(&self) -> Vec<u8> {
         match self {
+            Operand::Imm8(value) => value.to_le_bytes().to_vec(),
             Operand::Imm16(value) => value.to_le_bytes().to_vec(),
             Operand::Imm32(value) => value.to_le_bytes().to_vec(),
             Operand::Imm64(value) => value.to_le_bytes().to_vec(),
@@ -406,6 +407,7 @@ impl Mnemonic {
                     }
                 }
             }
+            Operand::Imm8(_) => operand_enc = Some(OperandEncoding::I),
             Operand::Imm16(_) => {
                 prefix |= IMM16_PREFIX;
                 operand_enc = Some(OperandEncoding::I)
@@ -521,9 +523,12 @@ pub enum MnemonicName {
     Div,
     Inc,
     Xor,
+    Or,
+    Shl,
     Push,
     Pop,
     Call,
+    SysCall,
     Cmp,
     Jmp,
     Jl,
@@ -557,6 +562,12 @@ lazy_static! {
     pub static ref XOR: Mnemonic = Mnemonic::new(MnemonicName::Xor)
         .opcode(0x31, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI).reg(6);
+    pub static ref OR: Mnemonic = Mnemonic::new(MnemonicName::Or)
+        .opcode(0x09, OperandEncoding::MR)
+        .opcode(0x81, OperandEncoding::MI).reg(1);
+    pub static ref SHL: Mnemonic = Mnemonic::new(MnemonicName::Shl)
+        .opcode(0x09, OperandEncoding::MR)
+        .opcode(0xC1, OperandEncoding::MI).reg(4);
 
     pub static ref PUSH: Mnemonic = Mnemonic::new(MnemonicName::Push)
         .opcode(0x50, OperandEncoding::OI)
@@ -567,6 +578,9 @@ lazy_static! {
         .no_rex_w();
     pub static ref CALL: Mnemonic = Mnemonic::new(MnemonicName::Call)
         .opcode(0xE8, OperandEncoding::D)
+        .no_rex_w();
+    pub static ref SYSCALL: Mnemonic = Mnemonic::new(MnemonicName::SysCall)
+        .opcode(0x0F, OperandEncoding::I)
         .no_rex_w();
     pub static ref CMP: Mnemonic = Mnemonic::new(MnemonicName::Cmp)
         .opcode(0x81, OperandEncoding::MI)

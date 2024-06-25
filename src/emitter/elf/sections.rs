@@ -1,12 +1,12 @@
-use std::{ffi::CString, mem};
+use std::{collections::BTreeMap, ffi::CString, mem};
 
-use crate::emitter::code_context::Sliceable;
+use crate::emitter::{ast, code_context::Sliceable};
 
-use super::defs;
+use super::{defs, Data};
 
 pub type DWord = u64;
 
-const VIRTUAL_ADDRESS_START: DWord = 0x08000000;
+pub const VIRTUAL_ADDRESS_START: DWord = 0x08000000;
 const DATA_SECTION_OFFSET: DWord =
     (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3) as _;
 pub const DATA_SECTION_ADDRESS_START: DWord = VIRTUAL_ADDRESS_START + DATA_SECTION_OFFSET;
@@ -34,6 +34,17 @@ pub struct ELFHeader {
     e_shentsize: u16,
     e_shnum: u16,
     e_shstrndx: u16,
+}
+
+impl ELFHeader {
+    pub fn get_entry_point(data_section_size: usize) -> u64 {
+        let e_ehsize = mem::size_of::<ELFHeader>() as u16;
+        let e_phentsize = mem::size_of::<ProgramHeader>() as u16;
+        let e_phnum = 3;
+        VIRTUAL_ADDRESS_START
+            + (e_ehsize + e_phentsize * e_phnum) as DWord
+            + data_section_size as DWord
+    }
 }
 
 impl Sliceable for ELFHeader {}
@@ -375,4 +386,27 @@ pub fn build_rel_text_section() -> RelocationTable {
         r_offset: 0x06,
         r_info: 0x301,
     }
+}
+
+pub fn build_data_section(literals: BTreeMap<ast::Ident, Data>) -> Vec<u8> {
+    let mut literals: Vec<_> = literals
+        .iter()
+        .filter_map(|(id, data)| match data.decl_type {
+            ast::DeclarationType::Let => None,
+            ast::DeclarationType::Const => Some((data.data_loc(), id.clone(), data.lit.clone())),
+        })
+        .collect();
+    literals.sort_by_key(|(data_loc, _, _)| *data_loc);
+    literals
+        .iter()
+        .fold(vec![], |mut acc, (_, _, lit)| match lit {
+            ast::Literal::String(string) => {
+                acc.extend(string.clone().into_bytes());
+                acc
+            }
+            ast::Literal::Number(n) => {
+                acc.extend(n.value.to_le_bytes().to_vec());
+                acc
+            }
+        })
 }
