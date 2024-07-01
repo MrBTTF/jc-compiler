@@ -1,8 +1,10 @@
 use std::{collections::BTreeMap, ffi::CString, mem};
 
+use elf::section;
+
 use crate::emitter::{ast, code_context::Sliceable};
 
-use super::{defs, Data};
+use super::{defs, Data, DataRef};
 
 pub type DWord = u64;
 
@@ -36,23 +38,24 @@ pub struct ELFHeader {
     e_shstrndx: u16,
 }
 
-impl ELFHeader {
-    pub fn get_entry_point(data_section_size: usize) -> u64 {
-        let e_ehsize = mem::size_of::<ELFHeader>() as u16;
-        let e_phentsize = mem::size_of::<ProgramHeader>() as u16;
-        let e_phnum = 3;
-        VIRTUAL_ADDRESS_START
-            + (e_ehsize + e_phentsize * e_phnum) as DWord
-            + data_section_size as DWord
-    }
-}
+// impl ELFHeader {
+//     pub fn get_entry_point(data_section_size: usize) -> u64 {
+//         let e_ehsize = mem::size_of::<ELFHeader>() as u16;
+//         let e_phentsize = mem::size_of::<ProgramHeader>() as u16;
+//         let e_phnum = 3;
+//         VIRTUAL_ADDRESS_START
+//             + (e_ehsize + e_phentsize * e_phnum) as DWord
+//             + data_section_size as DWord
+//     }
+// }
 
 impl Sliceable for ELFHeader {}
 
 #[repr(C)]
 pub struct RelocationTable {
-    r_offset: u32,
-    r_info: u32,
+    r_offset: u64,
+    r_info: u64,
+    r_addend: i64,
 }
 
 impl Sliceable for RelocationTable {}
@@ -72,6 +75,7 @@ pub struct ProgramHeader {
 impl Sliceable for ProgramHeader {}
 
 #[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct SectionHeader {
     sh_name: u32,
     sh_type: u32,
@@ -85,26 +89,51 @@ pub struct SectionHeader {
     sh_entsize: DWord,
 }
 
+impl SectionHeader {
+    pub fn new(
+        sh_size: usize,
+        sh_type: u32,
+        sh_flags: DWord,
+        sh_addralign: DWord,
+        sh_entsize: DWord,
+        sh_info: u32,
+        sh_link: u32,
+    ) -> Self {
+        Self {
+            sh_size: sh_size as DWord,
+            sh_type,
+            sh_flags,
+            sh_addralign,
+            sh_entsize,
+            sh_info,
+            sh_link,
+            sh_name: 0,
+            sh_addr: 0,
+            sh_offset: 0,
+        }
+    }
+}
+
 impl Sliceable for SectionHeader {}
 
 #[repr(C)]
+#[derive(Debug, Default)]
 pub struct SymbolTable {
     st_name: u32,
-    st_value: u32,
-    st_size: u32,
     st_info: u8,
     st_other: u8,
     st_shndx: u16,
+    st_value: u64,
+    st_size: u64,
 }
 
 impl Sliceable for SymbolTable {}
 
-pub fn build_header(data_section_size: usize, section_entry: usize) -> ELFHeader {
+pub fn build_header(sections: &[SectionHeader], shstrtab_index: usize) -> ELFHeader {
+    let sections_size: u64 = sections.iter().map(|s| s.sh_size).sum();
+
     let e_ehsize = mem::size_of::<ELFHeader>() as u16;
-    let e_phoff = e_ehsize as DWord;
-    let e_shoff = e_phoff + section_entry as DWord;
-    let e_phentsize = mem::size_of::<ProgramHeader>() as u16;
-    let e_phnum = 3;
+    let e_shoff = e_ehsize as DWord;
     let e_shentsize = mem::size_of::<SectionHeader>() as u16;
     ELFHeader {
         e_ident_magic_number: defs::ELF_MAGIC,
@@ -114,131 +143,45 @@ pub fn build_header(data_section_size: usize, section_entry: usize) -> ELFHeader
         e_ident_abi: defs::ELF_OSABI_SYSTEM_V,
         e_ident_abi_version: defs::ELF_ABI_VERSION_NONE,
         e_ident_pad: [0; 7],
-        e_type: defs::ELF_TYPE_EXEC,
+        e_type: defs::ELF_TYPE_REL,
         e_machine: defs::ELF_MACHINE_X86_64,
         e_version: defs::ELF_VERSION_CURRENT as u32,
-        e_entry: VIRTUAL_ADDRESS_START
-            + (e_ehsize + e_phentsize * e_phnum) as DWord
-            + data_section_size as DWord,
-        e_phoff,
+        e_entry: 0x0,
+        e_phoff: 0x0,
         e_shoff,
         e_flags: 0x0,
         e_ehsize,
-        e_phentsize,
-        e_phnum,
+        e_phentsize: 0x0,
+        e_phnum: 0x0,
         e_shentsize,
-        e_shnum: 4,
-        e_shstrndx: 3,
+        e_shnum: 1 + sections.len() as u16,
+        e_shstrndx: shstrtab_index as u16,
     }
 }
 
-pub fn build_program_headers(text_section_size: usize, data_section_size: usize) -> Vec<u8> {
-    let null_p_filesz = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
-        .try_into()
-        .unwrap();
-    let null_program_header = ProgramHeader {
-        p_type: defs::PROGRAM_TYPE_LOAD,
-        p_offset: 0x0,
-        p_vaddr: VIRTUAL_ADDRESS_START,
-        p_paddr: VIRTUAL_ADDRESS_START,
-        p_filesz: null_p_filesz,
-        p_memsz: null_p_filesz,
-        p_flags: defs::PROGRAM_HEADER_READ,
-        p_align: 1,
-    };
-    let data_p_filesz = data_section_size as DWord;
-    let data_program_header = ProgramHeader {
-        p_type: defs::PROGRAM_TYPE_LOAD,
-        p_flags: defs::PROGRAM_HEADER_READ | defs::PROGRAM_HEADER_WRITE,
-        p_offset: null_p_filesz,
-        p_vaddr: VIRTUAL_ADDRESS_START + null_p_filesz,
-        p_paddr: VIRTUAL_ADDRESS_START + null_p_filesz,
-        p_filesz: data_p_filesz,
-        p_memsz: data_p_filesz,
-        p_align: 1,
-    };
-    let text_p_filesz = text_section_size as DWord;
-    let text_program_header = ProgramHeader {
-        p_type: defs::PROGRAM_TYPE_LOAD,
-        p_offset: data_program_header.p_offset + data_p_filesz,
-        p_vaddr: data_program_header.p_vaddr + data_p_filesz,
-        p_paddr: data_program_header.p_vaddr + data_p_filesz,
-        p_filesz: text_p_filesz,
-        p_memsz: text_p_filesz,
-        p_flags: defs::PROGRAM_HEADER_READ | defs::PROGRAM_HEADER_EXEC,
-        p_align: 1,
-    };
-    [
-        null_program_header.as_slice(),
-        data_program_header.as_slice(),
-        text_program_header.as_slice(),
-    ]
-    .concat()
-}
+pub fn build_section_headers(sections: &[SectionHeader], section_names: &[&str]) -> Vec<u8> {
+    let mut result = SectionHeader::default().as_vec();
 
-pub fn build_section_headers(
-    text_section_size: usize,
-    data_section_size: usize,
-    shstrtab_section_size: usize,
-) -> Vec<u8> {
-    let data_entry: DWord = (mem::size_of::<ELFHeader>() + mem::size_of::<ProgramHeader>() * 3)
-        .try_into()
-        .unwrap();
-    let null_section_header = SectionHeader {
-        sh_name: 0x0,
-        sh_type: defs::SEGMENT_TYPE_NULL,
-        sh_flags: defs::SEGMENT_FLAGS_NONE,
-        sh_addr: 0x0,
-        sh_offset: 0x0,
-        sh_size: 0x0,
-        sh_link: 0x0,
-        sh_info: 0x0,
-        sh_addralign: 0x0,
-        sh_entsize: 0x0,
-    };
-    let data_section_header = SectionHeader {
-        sh_name: 0x11,
-        sh_type: defs::SEGMENT_TYPE_PROGBITS,
-        sh_flags: defs::SEGMENT_FLAGS_WRITE | defs::SEGMENT_FLAGS_ALLOC,
-        sh_addr: VIRTUAL_ADDRESS_START + data_entry,
-        sh_offset: data_entry,
-        sh_size: data_section_size as DWord,
-        sh_link: 0x0,
-        sh_info: 0x0,
-        sh_addralign: 0x0,
-        sh_entsize: 0x0,
-    };
-    let text_section_header = SectionHeader {
-        sh_name: 0x0B,
-        sh_type: defs::SEGMENT_TYPE_PROGBITS,
-        sh_flags: defs::SEGMENT_FLAGS_ALLOC | defs::SEGMENT_FLAGS_EXECINSTR,
-        sh_addr: data_section_header.sh_addr + data_section_header.sh_size,
-        sh_offset: data_entry + data_section_header.sh_size,
-        sh_size: text_section_size as DWord,
-        sh_link: 0x0,
-        sh_info: 0x0,
-        sh_addralign: 0x0,
-        sh_entsize: 0x0,
-    };
-    let shstrtab_section_header = SectionHeader {
-        sh_name: 0x01,
-        sh_type: defs::SEGMENT_TYPE_STRTAB,
-        sh_flags: defs::SEGMENT_FLAGS_NONE,
-        sh_addr: text_section_header.sh_addr + text_section_header.sh_size,
-        sh_offset: text_section_header.sh_offset + text_section_header.sh_size,
-        sh_size: shstrtab_section_size as DWord,
-        sh_link: 0x0,
-        sh_info: 0x0,
-        sh_addralign: 0x0,
-        sh_entsize: 0x0,
-    };
-    [
-        null_section_header.as_slice(),
-        data_section_header.as_slice(),
-        text_section_header.as_slice(),
-        shstrtab_section_header.as_slice(),
-    ]
-    .concat()
+    let mut sh_offset = (mem::size_of::<ELFHeader>()
+        + mem::size_of::<SectionHeader>() * (sections.len() + 1)) as DWord;
+    let mut sh_name = 0x1;
+
+    for (i, section) in sections.iter().enumerate() {
+        let mut section = *section;
+        section.sh_name = sh_name;
+        section.sh_offset = sh_offset;
+
+        sh_name += section_names[i].len() as u32 + 1;
+        // let mut remainder = section.sh_size % section.sh_addralign;
+        // if section.sh_addralign < 2 {
+        //     remainder = section.sh_addralign;
+        // }
+        // sh_offset += section.sh_size + section.sh_addralign - remainder;
+        sh_offset += section.sh_size;
+
+        result.extend(section.as_vec());
+    }
+    result
 }
 
 pub fn build_symtab_section_header() -> SectionHeader {
@@ -287,16 +230,117 @@ pub fn build_rel_text_section_header() -> SectionHeader {
 }
 
 #[rustfmt::skip]
-pub fn build_shstrtab_section() -> Vec<u8> {
-    [
-        vec![0],
-        CString::new(".shstrtab").unwrap().into_bytes_with_nul(),
-        CString::new(".text").unwrap().into_bytes_with_nul(),
-        CString::new(".data").unwrap().into_bytes_with_nul(),
-    ].concat()
+pub fn build_shstrtab_section(section_names: &[&str]) -> Vec<u8> {
+    section_names.iter().fold(vec![0], |mut acc, name| {
+        acc.extend(name.as_bytes());
+        acc.push(0);
+        acc
+    })
+    // [
+    //     vec![0],
+    //     CString::new(".text").unwrap().into_bytes_with_nul(),
+    //     CString::new(".data").unwrap().into_bytes_with_nul(),
+    //     CString::new(".shstrtab").unwrap().into_bytes_with_nul(),
+    // ].concat()
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Symbol {
+    pub name: String,
+    pub offset: u64,
+    pub data_loc: u64,
+    pub section: Option<u16>,
+    pub _type: u8,
+    pub bind: u8,
+}
+
+pub struct SymStr {
+    symtab: Vec<u8>,
+    strtab: Vec<u8>,
+}
+
+impl SymStr {
+    pub fn new(symbols: &[Symbol]) -> Self {
+        let mut symtab = SymbolTable::default().as_vec();
+        let mut strtab = vec![0];
+
+        for symbol in symbols {
+            let st_name = if symbol._type == defs::STT_SECTION {
+                0
+            } else {
+                let name = strtab.len();
+                strtab.extend(symbol.name.as_bytes());
+                strtab.push(0);
+                name as u32
+            };
+            let st_info = (symbol.bind << 4) + symbol._type;
+
+            let st_shndx = symbol.section.unwrap_or(0xfff1);
+
+            let symbol_table = SymbolTable {
+                st_name: st_name,
+                st_value: symbol.offset,
+                st_size: 0x0,
+                st_info: st_info,
+                st_other: 0x0,
+                st_shndx: st_shndx,
+            };
+            symtab.extend(symbol_table.as_vec())
+        }
+        Self { symtab, strtab }
+    }
+
+    pub fn get_symtab(&self) -> &[u8] {
+        self.symtab.as_slice()
+    }
+
+    pub fn get_strtab(&self) -> &[u8] {
+        self.strtab.as_slice()
+    }
 }
 
 pub fn build_symtab_sections() -> Vec<u8> {
+    return [
+        SymbolTable::default().as_vec(),
+        SymbolTable {
+            st_name: 0x1,
+            st_value: 0x0,
+            st_size: 0x0,
+            st_info: 0x4,
+            st_other: 0x0,
+            st_shndx: 0xfff1,
+        }
+        .as_vec(),
+        SymbolTable {
+            st_name: 0x0,
+            st_value: 0x0,
+            st_size: 0x0,
+            st_info: 0x3,
+            st_other: 0x0,
+            st_shndx: 0x01,
+        }
+        .as_vec(),
+        SymbolTable {
+            st_name: 0x0,
+            st_value: 0x3, // Offset in section
+            st_size: 0x0,
+            st_info: 0x3,
+            st_other: 0x0,
+            st_shndx: 0x02,
+        }
+        .as_vec(),
+        SymbolTable {
+            st_name: 0x15,
+            st_value: 0x00,
+            st_size: 0x0,
+            st_info: 0x10,
+            st_other: 0x0,
+            st_shndx: 0x1,
+        }
+        .as_vec(),
+    ]
+    .concat();
+
     let t0 = SymbolTable {
         st_name: 0x0,
         st_value: 0x0,
@@ -370,30 +414,43 @@ pub fn build_symtab_sections() -> Vec<u8> {
 pub fn build_strtab_section() -> Vec<u8> {
     [
         vec![0x0_u8],
-        "src/hello.asm".into(),
+        "local/bin/hello.asm".into(),
         vec![0x0_u8],
-        "msg".into(),
-        vec![0x0_u8],
-        "len".into(),
-        vec![0x0_u8],
+        // "msg".into(),
+        // vec![0x0_u8],
+        // "len".into(),
+        // vec![0x0_u8],
         "_start".into(),
         vec![0x0_u8],
     ].concat()
 }
 
-pub fn build_rel_text_section() -> RelocationTable {
-    RelocationTable {
-        r_offset: 0x06,
-        r_info: 0x301,
+pub fn build_rel_text_section(symbols: &Vec<Symbol>) -> Vec<u8> {
+    let mut result = vec![];
+    for (i, symbol) in symbols.iter().enumerate() {
+        if symbol._type != defs::STT_OBJECT && symbol._type != defs::STT_FUNC {
+            continue;
+        }
+
+        let sym = (i as u64 + 1) << 32;
+        let _type = 1_u64;
+        let info = sym + _type;
+        let rel = RelocationTable {
+            r_offset: symbol.data_loc,
+            r_info: info as u64,
+            r_addend: 0x0,
+        };
+        result.extend(rel.as_vec())
     }
+    result
 }
 
-pub fn build_data_section(literals: BTreeMap<ast::Ident, Data>) -> Vec<u8> {
+pub fn build_data_section(literals: &BTreeMap<ast::Ident, Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
         .filter_map(|(id, data)| match data.decl_type {
             ast::DeclarationType::Let => None,
-            ast::DeclarationType::Const => Some((data.data_loc(), id.clone(), data.lit.clone())),
+            ast::DeclarationType::Const => Some((data.data_loc, id.clone(), data.lit.clone())),
         })
         .collect();
     literals.sort_by_key(|(data_loc, _, _)| *data_loc);

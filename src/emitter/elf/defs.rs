@@ -102,3 +102,12 @@ pub const SEGMENT_FLAGS_LINK_ORDER: u64 = 1 << 7; /* Preserve order after combin
 pub const SEGMENT_FLAGS_OS_NONCONFORMING: u64 = 1 << 8; /* Non-standard OS specific handling required */
 pub const SEGMENT_FLAGS_GROUP: u64 = 1 << 9; /* Section is member of a group */
 pub const SEGMENT_FLAGS_TLS: u64 = 1 << 10; /* Section hold thread-local data */
+
+pub const STB_LOCAL: u8 = 0;
+pub const STB_GLOBAL: u8 = 1;
+
+pub const STT_NOTYPE: u8 = 0;
+pub const STT_OBJECT: u8 = 1;
+pub const STT_FUNC: u8 = 2;
+pub const STT_SECTION: u8 = 3;
+pub const STT_FILE: u8 = 4;

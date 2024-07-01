@@ -20,8 +20,8 @@ pub enum Arg {
 impl From<Data> for Arg {
     fn from(data: Data) -> Self {
         match data.decl_type {
-            ast::DeclarationType::Let => Arg::Stack(data.data_loc() as i64),
-            ast::DeclarationType::Const => Arg::Data(data.data_loc() as i64),
+            ast::DeclarationType::Let => Arg::Stack(data.data_loc as i64),
+            ast::DeclarationType::Const => Arg::Data(data.data_loc as i64),
         }
     }
 }
@@ -40,15 +40,12 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
         match arg.decl_type {
             DeclarationType::Let => {
                 code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
-                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc() as u32));
+                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
             }
             DeclarationType::Const => {
                 code_context
-                    .add(
-                        MOV.op1(ARG_REGISTERS[i])
-                            .op2(DATA_SECTION_ADDRESS_START + arg.data_loc()),
-                    )
-                    .with_const_data(arg.lit.as_vec());
+                    .add(MOV.op1(ARG_REGISTERS[i]).op2(0_u64))
+                    .with_const_data(&arg.symbol, arg.lit.as_vec());
             }
         }
     });

@@ -5,30 +5,31 @@ use super::ast::{self, DeclarationType};
 
 #[derive(Default, Debug, Clone)]
 pub struct DataRef {
+    pub symbol: String,
     pub offset: usize,
     pub data: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Data {
+    pub symbol: String,
     pub lit: ast::Literal,
-    data_loc: u64,
+    pub data_loc: u64,
     pub decl_type: ast::DeclarationType,
 }
 
 impl Data {
-    pub fn new(lit: ast::Literal, data_loc: u64, assign_type: ast::DeclarationType) -> Data {
+    pub fn new(
+        symbol: &str,
+        lit: ast::Literal,
+        data_loc: u64,
+        assign_type: ast::DeclarationType,
+    ) -> Data {
         Data {
+            symbol: symbol.to_string(),
             lit,
             data_loc,
             decl_type: assign_type,
-        }
-    }
-
-    pub fn data_loc(&self) -> u64 {
-        match self.decl_type {
-            DeclarationType::Let => self.data_loc,
-            DeclarationType::Const => self.data_loc,
         }
     }
 }
@@ -50,8 +51,10 @@ impl DataBuilder {
         let id = Ident {
             value: "__printf_d_arg".to_string(),
         };
-        self.variables
-            .insert(id.clone(), Data::new(lit, 0 as u64, DeclarationType::Const));
+        self.variables.insert(
+            id.clone(),
+            Data::new(&id.value, lit, 0 as u64, DeclarationType::Const),
+        );
         self.data_ordered.push(id.clone());
 
         statement_list
@@ -84,7 +87,7 @@ impl DataBuilder {
                             data_loc
                         }
                     };
-                    let data = Data::new(lit.clone(), data_loc as u64, *assign_type);
+                    let data = Data::new(&id.value, lit.clone(), data_loc as u64, *assign_type);
                     self.variables.insert(id.clone(), data.clone());
                     self.data_ordered.push(id.clone());
                 }
@@ -111,7 +114,7 @@ impl DataBuilder {
             self.stack.iter().sum()
         };
 
-        let data = Data::new(lit, data_loc as u64, ast::DeclarationType::Let);
+        let data = Data::new(&id.value, lit, data_loc as u64, ast::DeclarationType::Let);
         self.variables.insert(id.clone(), data.clone());
         self.data_ordered.push(id.clone());
     }

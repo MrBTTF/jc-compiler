@@ -222,7 +222,7 @@ impl Emitter {
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
         self.code_context
-            .add(SUB.op1(register::RCX).op2(counter.data_loc() as u32));
+            .add(SUB.op1(register::RCX).op2(counter.data_loc as u32));
         self.code_context
             .add(INC.op1(register::RCX).disp(Operand::Offset32(0)));
         self.code_context.add(

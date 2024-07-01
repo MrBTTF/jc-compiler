@@ -3,6 +3,8 @@ use std::{
     mem, usize,
 };
 
+use elf::symbol;
+
 use super::{
     data::DataRef,
     mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP},
@@ -42,10 +44,11 @@ impl CodeContext {
         self
     }
 
-    pub fn with_const_data(&mut self, data: Vec<u8>) {
+    pub fn with_const_data(&mut self, symbol: &str, data: Vec<u8>) {
         self.const_data.insert(
             self.get_pc() - 1,
             DataRef {
+                symbol: symbol.to_string(),
                 offset: self.last().get_value_loc(),
                 data,
             },
