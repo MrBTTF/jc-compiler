@@ -87,7 +87,8 @@ impl DataBuilder {
                             data_loc
                         }
                     };
-                    let data = Data::new(&id.value, lit.clone(), data_loc as u64, *assign_type);
+                    let data: Data =
+                        Data::new(&id.value, lit.clone(), data_loc as u64, *assign_type);
                     self.variables.insert(id.clone(), data.clone());
                     self.data_ordered.push(id.clone());
                 }

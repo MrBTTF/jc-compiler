@@ -13,7 +13,7 @@ fn _get_io_handle(code_context: &mut CodeContext, io_handle: Io) {
     code_context.add_slice(&[
         MOV.op1(ARG_REGISTERS[0]).op2(io_handle as u64),
         CALL.op1(Operand::Offset32(0))
-            .symbol("__acrt_iob_func".to_string()),
+            .symbol("__acrt_iob_func".to_string(), CallType::Global),
         MOV.op1(register::R10).op2(register::RAX),
     ]);
 }
@@ -25,7 +25,7 @@ fn _print(code_context: &mut CodeContext) {
         MOV.op1(register::R9).op2(0_u64),
         SUB.op1(register::RSP).op2(32_u32),
         CALL.op1(Operand::Offset32(0))
-            .symbol("__stdio_common_vfprintf".to_string()),
+            .symbol("__stdio_common_vfprintf".to_string(), CallType::Global),
         ADD.op1(register::RSP).op2(32_u32),
     ]);
 }
@@ -46,7 +46,7 @@ fn _printd(code_context: &mut CodeContext) {
         SUB.op1(register::RSP).op2(32_u32),
         MOV.op1(register::RDX).op2(register::R10),
         CALL.op1(Operand::Offset32(0))
-            .symbol("__stdio_common_vfprintf".to_string()),
+            .symbol("__stdio_common_vfprintf".to_string(), CallType::Global),
         ADD.op1(register::RSP).op2(48_u32),
     ]);
 }
@@ -61,6 +61,6 @@ pub fn exit(code_context: &mut CodeContext, exit_code: u64) {
     code_context.add_slice(&[
         MOV.op1(register::RAX).op2(exit_code),
         CALL.op1(Operand::Offset32(0))
-            .symbol("ExitProcess".to_string()),
+            .symbol("ExitProcess".to_string(), CallType::Global),
     ]);
 }

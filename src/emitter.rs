@@ -1,4 +1,5 @@
 use ::std::collections::BTreeMap;
+use ::std::path::PathBuf;
 
 use ast::*;
 use code_context::CodeContext;
@@ -36,7 +37,7 @@ use stdlib::linux as std;
 #[cfg(target_os = "windows")]
 use stdlib::windows as std;
 
-pub fn build_executable(ast: &ast::StatementList, output_path: &str) {
+pub fn build_executable(ast: &ast::StatementList, output_path: PathBuf) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_statement_list(ast);
     dbg!(&data_builder.variables);
@@ -187,20 +188,6 @@ impl Emitter {
                 }
             };
 
-            return;
-        } else if id.value == "printf" {
-            match data.lit {
-                ast::Literal::String(_) => {
-                    let args = &[data.clone()];
-                    call_abi::push_args(&mut self.code_context, args);
-
-                    self.code_context
-                        .add_slice(&[CALL.op1(Operand::Offset32(0)).symbol("printf".to_string())]);
-
-                    call_abi::pop_args(&mut self.code_context, args.len());
-                }
-                ast::Literal::Number(_) => todo!(),
-            };
             return;
         }
 

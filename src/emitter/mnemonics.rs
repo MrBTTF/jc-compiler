@@ -3,6 +3,8 @@ use std::{collections::HashMap, fmt::Display};
 
 use self::register::RegisterSize;
 
+use super::code_context::Call;
+
 const REGISTER_EXT_INDEX: u8 = 0x30;
 const JMP_PREFIX: u8 = 0x0F;
 
@@ -138,8 +140,6 @@ impl Operand {
     }
 }
 
-
-
 impl Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -194,6 +194,12 @@ pub enum OperandEncoding {
     D,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum CallType {
+    Local,
+    Global,
+}
+
 #[derive(Debug, Clone)]
 pub struct Mnemonic {
     name: MnemonicName,
@@ -206,6 +212,7 @@ pub struct Mnemonic {
     op2: Operand,
     disp: Operand,
     symbol: Option<String>,
+    call_type: Option<CallType>,
     value_loc: usize,
 }
 
@@ -225,6 +232,7 @@ impl Display for Mnemonic {
             op2: {},
             disp: {},
             symbol: {:?},
+            call_type: {:?},
             value_loc: {},
         }}",
             self.name,
@@ -235,6 +243,7 @@ impl Display for Mnemonic {
             self.op2,
             self.disp,
             self.symbol,
+            self.call_type,
             self.value_loc,
         )
     }
@@ -253,6 +262,7 @@ impl Mnemonic {
             op2: Operand::None,
             disp: Operand::None,
             symbol: None,
+            call_type: None,
             value_loc: 0,
         }
     }
@@ -278,6 +288,11 @@ impl Mnemonic {
     pub fn get_symbol(&self) -> Option<&str> {
         assert_eq!(self.name, MnemonicName::Call);
         self.symbol.as_deref()
+    }
+
+    pub fn get_call_type(&self) -> Option<CallType> {
+        assert_eq!(self.name, MnemonicName::Call);
+        self.call_type
     }
 
     pub fn opcode(&self, opcode: u8, operands: OperandEncoding) -> Self {
@@ -337,10 +352,11 @@ impl Mnemonic {
         cloned
     }
 
-    pub fn symbol(&mut self, symbol: String) -> Self {
+    pub fn symbol(&mut self, symbol: String, call_type: CallType) -> Self {
         assert_eq!(self.name, MnemonicName::Call);
         let mut cloned = self.clone();
         cloned.symbol = Some(symbol);
+        cloned.call_type = Some(call_type);
         cloned
     }
 
@@ -399,7 +415,7 @@ impl Mnemonic {
                         if let Some(oi_opcode) = self.opcodes.get_mut(&OperandEncoding::OI) {
                             *oi_opcode += dst.code;
                             operand_enc = Some(OperandEncoding::OI);
-                        } else if self.opcodes.get_mut(&OperandEncoding::M).is_some()  {
+                        } else if self.opcodes.get_mut(&OperandEncoding::M).is_some() {
                             operand_enc = Some(OperandEncoding::M);
                         } else {
                             operand_enc = Some(OperandEncoding::MI);
@@ -452,9 +468,7 @@ impl Mnemonic {
                 _mod = match self.disp {
                     Operand::Offset8(_) => MOD_DISP8,
                     Operand::Offset32(_) => MOD_DISP32,
-                    _ => {
-                        MOD_REG
-                    }
+                    _ => MOD_REG,
                 };
                 let mod_rm = _mod << 6 | reg << 3 | rm;
                 result.extend(mod_rm.to_le_bytes());
@@ -468,9 +482,7 @@ impl Mnemonic {
                 _mod = match self.disp {
                     Operand::Offset8(_) => MOD_DISP8,
                     Operand::Offset32(_) => MOD_DISP32,
-                    _ => {
-                        MOD_REG
-                    }
+                    _ => MOD_REG,
                 };
                 let mod_rm = _mod << 6 | reg << 3 | rm;
                 result.extend(mod_rm.to_le_bytes());
@@ -545,7 +557,8 @@ lazy_static! {
         .opcode(0x8B, OperandEncoding::RM)
         .opcode(0xB8, OperandEncoding::OI);
     pub static ref MOV_MI: Mnemonic = Mnemonic::new(MnemonicName::Mov)
-        .opcode(0xC7, OperandEncoding::MI).reg(0);
+        .opcode(0xC7, OperandEncoding::MI)
+        .reg(0);
     pub static ref ADD: Mnemonic = Mnemonic::new(MnemonicName::Add)
         .opcode(0x01, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI);
@@ -561,14 +574,16 @@ lazy_static! {
         .reg(0);
     pub static ref XOR: Mnemonic = Mnemonic::new(MnemonicName::Xor)
         .opcode(0x31, OperandEncoding::MR)
-        .opcode(0x81, OperandEncoding::MI).reg(6);
+        .opcode(0x81, OperandEncoding::MI)
+        .reg(6);
     pub static ref OR: Mnemonic = Mnemonic::new(MnemonicName::Or)
         .opcode(0x09, OperandEncoding::MR)
-        .opcode(0x81, OperandEncoding::MI).reg(1);
+        .opcode(0x81, OperandEncoding::MI)
+        .reg(1);
     pub static ref SHL: Mnemonic = Mnemonic::new(MnemonicName::Shl)
         .opcode(0x09, OperandEncoding::MR)
-        .opcode(0xC1, OperandEncoding::MI).reg(4);
-
+        .opcode(0xC1, OperandEncoding::MI)
+        .reg(4);
     pub static ref PUSH: Mnemonic = Mnemonic::new(MnemonicName::Push)
         .opcode(0x50, OperandEncoding::OI)
         .opcode(0x68, OperandEncoding::I)
@@ -600,7 +615,6 @@ lazy_static! {
         .rm(RM_DISP32)
         .no_rex_w()
         .has_jump_prefix();
-
 }
 
 lazy_static! {
@@ -720,11 +734,14 @@ mod tests {
 
     #[rstest]
     #[case::Rcx(register::RCX, Operand::Offset32(0xFFFF), vec ! [0x48, 0xFF, 0x81, 0xFF, 0xFF, 0x0, 0x0])]
-    fn test_inc_offset(#[case] op1: impl Into<Operand>, #[case] disp: impl Into<Operand>, #[case] expected: Vec<u8>) {
+    fn test_inc_offset(
+        #[case] op1: impl Into<Operand>,
+        #[case] disp: impl Into<Operand>,
+        #[case] expected: Vec<u8>,
+    ) {
         let mut instruction = INC.op1(op1).disp(disp);
         assert_eq!(instruction.as_vec(), expected);
     }
-
 
     #[rstest]
     #[case::Offset32(Operand::Offset32(0xABCDEF1), vec ! [0xE8, 0xF1, 0xDE, 0xBC, 0x0A])]

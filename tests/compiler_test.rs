@@ -34,36 +34,19 @@ Value
     )
 }
 
-#[test]
-fn test_extern() {
-    let src = "extern";
-    let output = compile_src(&src);
-    assert_eq!(&output, "Print from libc!\n");
-}
 
 #[cfg(target_os = "linux")]
 fn compile_src(src: &str) -> String {
     let dest = env::current_dir()
         .unwrap()
         .join(&format!("local/bin/{src}"));
-    let mut obj_file = dest.clone();
-    obj_file.set_extension("o");
     let src = env::current_dir()
         .unwrap()
         .join(&format!("tests/fixtures/{src}.jc"));
 
     let child = Command::new("cargo")
-        .args(&["run", src.to_str().unwrap(), obj_file.to_str().unwrap()])
+        .args(&["run", src.to_str().unwrap(), dest.to_str().unwrap()])
         .env("RUST_BACKTRACE", "1")
-        .output()
-        .unwrap();
-
-    if !child.status.success() {
-        panic!("{}", String::from_utf8(child.stderr).unwrap());
-    }
-
-    let child = Command::new("ld")
-        .args(&["-o", dest.to_str().unwrap(), obj_file.to_str().unwrap()])
         .output()
         .unwrap();
 

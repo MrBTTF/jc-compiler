@@ -1,7 +1,17 @@
 pub mod defs;
 pub mod sections;
 
-use std::{collections::BTreeMap, fmt::Result, fs, io::Write, mem};
+use std::{
+    collections::{hash_map::Entry, BTreeMap, HashMap},
+    fmt::Result,
+    fs,
+    io::Write,
+    mem,
+    path::PathBuf,
+    process::Command,
+};
+
+use elf::relocation::Rel;
 
 use self::{
     super::{ast, data::*},
@@ -13,7 +23,7 @@ use super::{
     Emitter, Ident,
 };
 
-pub fn build(output_path: &str, emitter: Emitter, variables: &BTreeMap<ast::Ident, Data>) {
+pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::Ident, Data>) {
     let data_section_data = build_data_section(&variables);
 
     let code_context = emitter.get_code_context();
@@ -30,11 +40,12 @@ pub fn build(output_path: &str, emitter: Emitter, variables: &BTreeMap<ast::Iden
         ".rela.text",
     ];
     let shstrtab_section_data: Vec<u8> = build_shstrtab_section(section_names);
-    let symbols = build_symbols("local/bin/hello.o", &code_context, &variables);
+    let (symbols, relocations, last_local_idx) =
+        build_symbols("local/bin/hello.o", &code_context, &variables);
     let symstr = SymStr::new(symbols.as_slice());
     let symtab_section_data = symstr.get_symtab();
     let strtab_section_data = symstr.get_strtab();
-    let relocation_section_data: Vec<u8> = build_rel_text_section(&symbols);
+    let relocation_section_data: Vec<u8> = build_rel_text_section(&relocations);
 
     let section_headers = &[
         SectionHeader::new(
@@ -70,7 +81,7 @@ pub fn build(output_path: &str, emitter: Emitter, variables: &BTreeMap<ast::Iden
             defs::SEGMENT_FLAGS_NONE,
             8,
             mem::size_of::<sections::SymbolTable>() as u64,
-            symbols.len() as u32, // TODO: compute
+            last_local_idx as u32 + 1,
             5,
         ),
         SectionHeader::new(
@@ -98,7 +109,9 @@ pub fn build(output_path: &str, emitter: Emitter, variables: &BTreeMap<ast::Iden
 
     let header_data = header.as_slice();
 
-    let mut file = fs::File::create(output_path).unwrap();
+    let object_file = output_path.with_extension("o");
+
+    let mut file = fs::File::create(&object_file).unwrap();
     file.write_all(header_data).unwrap();
     // file.write_all(program_headers).unwrap();
 
@@ -111,13 +124,27 @@ pub fn build(output_path: &str, emitter: Emitter, variables: &BTreeMap<ast::Iden
     file.write_all(&symtab_section_data).unwrap();
     file.write_all(&strtab_section_data).unwrap();
     file.write_all(&relocation_section_data).unwrap();
+
+    let child = Command::new("ld")
+        .args(&[
+            "-lc",
+            "-o",
+            output_path.to_str().unwrap(),
+            object_file.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    if !child.status.success() {
+        panic!("{}", String::from_utf8(child.stderr).unwrap());
+    }
 }
 
 fn build_symbols(
     filename: &str,
     code_context: &CodeContext,
     variables: &BTreeMap<ast::Ident, Data>,
-) -> Vec<Symbol> {
+) -> (Vec<Symbol>, Vec<Relocation>, usize) {
     let file = Symbol {
         name: filename.to_string(),
         offset: 0,
@@ -139,7 +166,9 @@ fn build_symbols(
         bind: defs::STB_LOCAL,
         ..Default::default()
     };
-    let mut local_vars = vec![];
+    let mut result = vec![file, text, data];
+
+    let mut relocations = vec![];
     for (pc, d) in code_context.get_const_data() {
         let offset = variables
             .get(&Ident {
@@ -147,17 +176,50 @@ fn build_symbols(
             })
             .unwrap()
             .data_loc;
-        let data_loc = code_context.get_offset(pc) + d.offset;
+        let data_loc = (code_context.get_offset(pc) + d.offset) as u64;
         let symbol = Symbol {
             name: d.symbol.to_string(),
             offset,
-            data_loc: data_loc as u64,
+            data_loc: data_loc,
             section: Some(2),
             _type: defs::STT_OBJECT,
             bind: defs::STB_LOCAL,
             ..Default::default()
         };
-        local_vars.push(symbol);
+        relocations.push(Relocation::new(result.len(), data_loc, symbol._type));
+        result.push(symbol.clone());
+    }
+
+    let last_local_idx = result.len();
+    dbg!(last_local_idx);
+
+    let calls = code_context.get_calls();
+    for (name, call) in calls {
+        let mut existing_symbols: HashMap<String, usize> = HashMap::new();
+
+        for pc in &call.offsets {
+            let address_loc = code_context.get_offset(*pc) + 1;
+            dbg!(&call, address_loc);
+
+            let symbol: Symbol = Symbol {
+                name: name.clone(),
+                data_loc: address_loc as u64,
+                offset: 0,
+                section: Some(0),
+                _type: defs::STT_FUNC,
+                bind: defs::STB_GLOBAL,
+                ..Default::default()
+            };
+
+            if let Entry::Occupied(s) = existing_symbols.entry(name.clone()) {
+                relocations.push(Relocation::new(*s.get(), address_loc as u64, symbol._type));
+                continue;
+            }
+
+            existing_symbols.insert(symbol.name.to_string(), result.len());
+            relocations.push(Relocation::new(result.len(), symbol.data_loc, symbol._type));
+            result.push(symbol.clone());
+        }
     }
 
     let start = Symbol {
@@ -169,11 +231,9 @@ fn build_symbols(
         ..Default::default()
     };
 
-    let mut result = vec![file, text, data];
-    result.extend(local_vars);
     result.push(start);
 
-    result
+    (result, relocations, last_local_idx)
 }
 
 fn align(mut v: Vec<u8>, alignment: usize) -> Vec<u8> {

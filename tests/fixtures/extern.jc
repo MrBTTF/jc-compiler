@@ -1,2 +1,0 @@
-const a = .Print from libc!\n
-printf(a)

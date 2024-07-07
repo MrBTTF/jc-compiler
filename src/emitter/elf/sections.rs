@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, ffi::CString, mem};
+use std::{
+    collections::{hash_map::Entry, BTreeMap, HashMap},
+    ffi::CString,
+    mem,
+    os::unix::raw::off_t,
+};
 
 use elf::section;
 
@@ -51,6 +56,7 @@ pub struct ELFHeader {
 
 impl Sliceable for ELFHeader {}
 
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct RelocationTable {
     r_offset: u64,
@@ -299,144 +305,48 @@ impl SymStr {
     }
 }
 
-pub fn build_symtab_sections() -> Vec<u8> {
-    return [
-        SymbolTable::default().as_vec(),
-        SymbolTable {
-            st_name: 0x1,
-            st_value: 0x0,
-            st_size: 0x0,
-            st_info: 0x4,
-            st_other: 0x0,
-            st_shndx: 0xfff1,
-        }
-        .as_vec(),
-        SymbolTable {
-            st_name: 0x0,
-            st_value: 0x0,
-            st_size: 0x0,
-            st_info: 0x3,
-            st_other: 0x0,
-            st_shndx: 0x01,
-        }
-        .as_vec(),
-        SymbolTable {
-            st_name: 0x0,
-            st_value: 0x3, // Offset in section
-            st_size: 0x0,
-            st_info: 0x3,
-            st_other: 0x0,
-            st_shndx: 0x02,
-        }
-        .as_vec(),
-        SymbolTable {
-            st_name: 0x15,
-            st_value: 0x00,
-            st_size: 0x0,
-            st_info: 0x10,
-            st_other: 0x0,
-            st_shndx: 0x1,
-        }
-        .as_vec(),
-    ]
-    .concat();
-
-    let t0 = SymbolTable {
-        st_name: 0x0,
-        st_value: 0x0,
-        st_size: 0x0,
-        st_info: 0x0,
-        st_other: 0x0,
-        st_shndx: 0x0,
-    };
-    let t1 = SymbolTable {
-        st_name: 0x1,
-        st_value: 0x0,
-        st_size: 0x0,
-        st_info: 0x4,
-        st_other: 0x0,
-        st_shndx: 0xfff1,
-    };
-    let t2 = SymbolTable {
-        st_name: 0x0,
-        st_value: 0x0,
-        st_size: 0x0,
-        st_info: 0x3,
-        st_other: 0x0,
-        st_shndx: 0x01,
-    };
-
-    let t3 = SymbolTable {
-        st_name: 0x0,
-        st_value: 0x0,
-        st_size: 0x0,
-        st_info: 0x3,
-        st_other: 0x0,
-        st_shndx: 0x02,
-    };
-    let t4 = SymbolTable {
-        st_name: 0x0F,
-        st_value: 0x0,
-        st_size: 0x0,
-        st_info: 0x0,
-        st_other: 0x0,
-        st_shndx: 0x02,
-    };
-    let t5 = SymbolTable {
-        st_name: 0x13,
-        st_value: 0x0E,
-        st_size: 0x0,
-        st_info: 0x0,
-        st_other: 0x0,
-        st_shndx: 0xfff1,
-    };
-    let t6 = SymbolTable {
-        st_name: 0x17,
-        st_value: 0x00,
-        st_size: 0x0,
-        st_info: 0x10,
-        st_other: 0x0,
-        st_shndx: 0x01,
-    };
-    [
-        t0.as_slice(),
-        t1.as_slice(),
-        t2.as_slice(),
-        t3.as_slice(),
-        t4.as_slice(),
-        t5.as_slice(),
-        t6.as_slice(),
-    ]
-    .concat()
+#[derive(Debug, Clone, Copy)]
+pub struct Relocation {
+    symbol: u64,
+    offset: u64,
+    _type: u8,
 }
 
-#[rustfmt::skip]
-pub fn build_strtab_section() -> Vec<u8> {
-    [
-        vec![0x0_u8],
-        "local/bin/hello.asm".into(),
-        vec![0x0_u8],
-        // "msg".into(),
-        // vec![0x0_u8],
-        // "len".into(),
-        // vec![0x0_u8],
-        "_start".into(),
-        vec![0x0_u8],
-    ].concat()
+impl Relocation {
+    pub fn new(symbol: usize, offset: u64, _type: u8) -> Self {
+        Self {
+            symbol: symbol as u64,
+            offset: offset,
+            _type,
+        }
+    }
 }
 
-pub fn build_rel_text_section(symbols: &Vec<Symbol>) -> Vec<u8> {
+pub fn build_rel_text_section(relocations: &Vec<Relocation>) -> Vec<u8> {
     let mut result = vec![];
-    for (i, symbol) in symbols.iter().enumerate() {
-        if symbol._type != defs::STT_OBJECT && symbol._type != defs::STT_FUNC {
+    for rel in relocations {
+        if rel._type != defs::STT_OBJECT && rel._type != defs::STT_FUNC {
             continue;
         }
 
-        let sym = (i as u64 + 1) << 32;
+        if rel._type == defs::STT_FUNC {
+            let sym = (rel.symbol + 1) << 32;
+            let _type = 4_u64;
+            let info = sym + _type;
+            let rel = RelocationTable {
+                r_offset: rel.offset,
+                r_info: info as u64,
+                r_addend: -0x4,
+            };
+            result.extend(rel.as_vec());
+            continue;
+        }
+
+        let sym = (rel.symbol + 1) << 32;
         let _type = 1_u64;
         let info = sym + _type;
         let rel = RelocationTable {
-            r_offset: symbol.data_loc,
+            r_offset: rel.offset,
             r_info: info as u64,
             r_addend: 0x0,
         };

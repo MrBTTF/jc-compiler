@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{btree_map, BTreeMap, HashMap},
     mem, usize,
 };
 
@@ -11,11 +11,18 @@ use super::{
 };
 
 #[derive(Debug, Clone)]
+pub struct Call {
+    pub symbol: String,
+    pub offsets: Vec<usize>,
+    pub call_type: mnemonics::CallType,
+}
+
+#[derive(Debug, Clone)]
 pub struct CodeContext {
     instructions: Vec<Mnemonic>,
     pc: usize,
     offsets: Vec<usize>,
-    calls: BTreeMap<String, Vec<usize>>,
+    calls: BTreeMap<String, Call>,
     const_data: BTreeMap<usize, DataRef>,
     image_base: u64,
 }
@@ -35,7 +42,16 @@ impl CodeContext {
     pub fn add(&mut self, mnemonic: Mnemonic) -> &mut Self {
         if let MnemonicName::Call = mnemonic.get_name() {
             let symbol = mnemonic.get_symbol().unwrap().to_string();
-            self.calls.entry(symbol).or_default().push(self.pc);
+            match self.calls.entry(symbol.clone()) {
+                btree_map::Entry::Vacant(c) => {
+                    c.insert(Call {
+                        symbol: symbol.clone(),
+                        offsets: vec![self.pc],
+                        call_type: mnemonic.get_call_type().unwrap(),
+                    });
+                }
+                btree_map::Entry::Occupied(mut c) => c.get_mut().offsets.push(self.pc),
+            }
         }
         self.instructions.push(mnemonic.clone());
         self.pc += 1;
@@ -89,7 +105,7 @@ impl CodeContext {
         self.instructions.last().unwrap()
     }
 
-    pub fn get_calls(&self) -> BTreeMap<String, Vec<usize>> {
+    pub fn get_calls(&self) -> BTreeMap<String, Call> {
         self.calls.clone()
     }
 
@@ -102,8 +118,8 @@ impl CodeContext {
         text_section_start: u32,
         external_symbols: HashMap<String, u32>,
     ) {
-        for (call, locs) in self.calls.clone().iter() {
-            for c in locs.iter() {
+        for (name, call) in self.calls.clone().iter() {
+            for c in call.offsets.iter() {
                 assert_eq!(
                     self.instructions[*c].get_name(),
                     MnemonicName::Call,
@@ -118,7 +134,7 @@ impl CodeContext {
             }
 
             self.add(mnemonics::JMP.op1(0_u32));
-            let mut jump_offset = external_symbols[call];
+            let mut jump_offset = external_symbols[name];
             jump_offset -= text_section_start + self.get_code_size() as u32;
             self.instructions.last_mut().unwrap().set_op1(jump_offset);
         }
