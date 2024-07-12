@@ -1,5 +1,7 @@
 use crate::emitter::ast::*;
 
+use super::ident;
+
 pub struct AstPrinter;
 
 impl Visitor<String> for AstPrinter {
@@ -20,11 +22,32 @@ impl Visitor<String> for AstPrinter {
                 let s2 = self.visit_expression(expr);
                 format!("{assign_type} {s1} = {s2}")
             }
-            Statement::Assignment(Assignment(ident, expr) )=> {
+            Statement::Assignment(Assignment(ident, expr)) => {
                 let s1 = self.visit_ident(ident);
                 let s2 = self.visit_expression(expr);
                 format!("{s1} = {s2}")
             }
+            Statement::FuncDeclaration(FuncDeclaration(name, args, return_type, stmts)) => {
+                let s_name = self.visit_ident(name);
+                let s_args = args.iter().fold(String::new(), |mut acc, a| {
+                    let arg_name = self.visit_ident(&a.0);
+                    let arg_type = self.visit_ident(&a.1);
+                    acc.push_str(arg_name.as_str());
+                    acc.push_str(": ");
+                    acc.push_str(arg_type.as_str());
+                    acc
+                });
+
+                let mut result = format!("{s_name} ({s_args})");
+                if let Some(return_type) = return_type {
+                    let s_return_type = self.visit_ident(return_type);
+                    result = format!("{result} {s_return_type}")
+                }
+                let s_stmts = self.visit_statement_list(stmts).replace("\n", "\n\t");
+
+                format!("func {result} {{\n {s_stmts} \n}}")
+            }
+            Statement::ControlFlow(_) => format!(""),
         }
     }
 

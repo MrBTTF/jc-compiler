@@ -94,7 +94,9 @@ impl DataBuilder {
                 }
                 _ => todo!(),
             },
+            ast::Statement::FuncDeclaration(_) => (),
             ast::Statement::Assignment(ast::Assignment(_id, _expr)) => (),
+            ast::Statement::ControlFlow(_) => (),
         }
         self.current_line += 1;
     }

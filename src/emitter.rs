@@ -86,9 +86,11 @@ impl Emitter {
                 self.visit_expression(expr);
             }
             ast::Statement::Declaration(_) => (),
+            ast::Statement::FuncDeclaration(_) => (),
             ast::Statement::Assignment(assign) => {
                 self.visit_assignment(assign);
             }
+            Statement::ControlFlow(_) => (),
         };
     }
 

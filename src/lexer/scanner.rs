@@ -26,6 +26,7 @@ fn operator(s: &str) -> (Option<Token>, usize) {
         ')' => (Some(Token::RightP), 1),
         '{' => (Some(Token::BlockStart), 1),
         '}' => (Some(Token::BlockEnd), 1),
+        ':' => (Some(Token::Column), 1),
         _ => (None, 0),
     }
 }
@@ -110,8 +111,8 @@ fn scan_token(s: &str) -> (Option<Token>, usize) {
 pub fn scan(source_code: String) -> Vec<Token> {
     let mut tokens: Vec<Token> = vec![Token::BlockStart];
     for line in source_code.lines() {
-        if line.is_empty() {
-            continue
+        if line.trim().is_empty() {
+            continue;
         }
         let mut start = 0;
         let mut line_tokens: Vec<Token> = vec![];

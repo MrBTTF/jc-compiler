@@ -1,17 +1,24 @@
 pub mod ast_printer;
 
+use std::iter;
+
 use crate::{
     emitter::ast::{self, StatementList},
     lexer::token::Token,
 };
 
 /*
+func_or_global := func ident (args) block | global
+args := (ident: ident,)*
 block := { statement_list  }
 statement_list := statement*
-statement := declaration | assignment | expression
+statement := declaration | assignment | expression | func_declaration | control_flow
 declaration := ("let" | "const") ident "=" expression
 assignment := ident "=" expression
 expression := literal | ident | call | loop
+control_flow := return
+func_declaration := func ident (args) ident block
+args := (ident: ident,)*
 loop := "for" ident..ident block
 call := ident(expression)
 literal := string | number
@@ -47,10 +54,14 @@ fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
 fn statement(tokens: &[Token]) -> (Option<ast::Statement>, &[Token]) {
     if let (Some(decl), tokens) = declaration(tokens) {
         (Some(ast::Statement::Declaration(decl)), &tokens)
+    } else if let (Some(func_decl), tokens) = func_declaration(tokens) {
+        (Some(ast::Statement::FuncDeclaration(func_decl)), tokens)
     } else if let (Some(assgn), tokens) = assignment(tokens) {
         (Some(ast::Statement::Assignment(assgn)), &tokens)
     } else if let (Some(expr), tokens) = expression(tokens) {
         (Some(ast::Statement::Expression(expr)), tokens)
+    } else if let (Some(ctrl_flow), tokens) = control_flow(tokens) {
+        (Some(ast::Statement::ControlFlow(ctrl_flow)), tokens)
     } else {
         (None, tokens)
     }
@@ -78,6 +89,41 @@ fn declaration(tokens: &[Token]) -> (Option<ast::Declaration>, &[Token]) {
     } else {
         (None, tokens)
     }
+}
+
+fn func_declaration(tokens: &[Token]) -> (Option<ast::FuncDeclaration>, &[Token]) {
+    if tokens.len() < 6 {
+        return (None, tokens);
+    }
+    let func_name = match &tokens[..3] {
+        [Token::Ident(keyword), Token::Ident(func_name), Token::LeftP]
+            if keyword.as_str() == "func" =>
+        {
+            ident(func_name)
+        }
+        _ => return (None, tokens),
+    };
+
+    let mut args = vec![];
+    let mut tokens = &tokens[3..];
+    for arg in tokens.chunks(2) {
+        if let Token::Ident(arg_name) = &arg[0] {
+            if let Token::Ident(arg_type) = &arg[1] {
+                let arg = ast::Arg(ident(arg_name.as_str()), ident(arg_type.as_str()));
+                args.push(arg);
+                tokens = &tokens[2..];
+            }
+        } else if arg[0] == Token::RightP {
+            break;
+        }
+    }
+
+    let (block, tokens) = block(&tokens[1..]);
+
+    let func_declaration =
+        ast::FuncDeclaration(func_name.clone(), args, None, StatementList(block));
+
+    (Some(func_declaration), tokens)
 }
 
 fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {
@@ -108,6 +154,20 @@ fn expression(tokens: &[Token]) -> (Option<ast::Expression>, &[Token]) {
     }
     (None, tokens)
     // panic!("invalid expression: {:?}", &tokens)
+}
+
+fn control_flow(tokens: &[Token]) -> (Option<ast::ControlFlow>, &[Token]) {
+    let id = match &tokens[0] {
+        Token::Ident(id) => id,
+        _ => {
+            return (None, tokens);
+        }
+    };
+    if id == "return" {
+        (Some(ast::ControlFlow::Return), &tokens[1..])
+    } else {
+        (None, tokens)
+    }
 }
 
 fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {

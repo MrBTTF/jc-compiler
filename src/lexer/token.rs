@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token {
     Equal,
     Newline,
@@ -9,6 +9,7 @@ pub enum Token {
     Whitespace,
     Range,
     StatementEnd,
+    Column,
     Ident(String),
     String(String),
     Number(i64),

@@ -1,5 +1,6 @@
 use std::{fmt::Display, mem};
 
+#[derive(Debug, Clone)]
 pub struct StatementList(pub Vec<Statement>);
 
 #[derive(Debug, Clone)]
@@ -7,6 +8,8 @@ pub enum Statement {
     Expression(Expression),
     Declaration(Declaration),
     Assignment(Assignment),
+    FuncDeclaration(FuncDeclaration),
+    ControlFlow(ControlFlow),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +45,17 @@ impl TryFrom<&str> for DeclarationType {
 pub struct Declaration(pub Ident, pub Expression, pub DeclarationType);
 
 #[derive(Debug, Clone)]
+pub struct FuncDeclaration(
+    pub Ident,
+    pub Vec<Arg>,
+    pub Option<Ident>,
+    pub StatementList,
+);
+
+#[derive(Debug, Clone)]
+pub struct Arg(pub Ident, pub Ident);
+
+#[derive(Debug, Clone)]
 
 pub struct Assignment(pub Ident, pub Expression);
 
@@ -51,6 +65,11 @@ pub enum Expression {
     Literal(Literal),
     Call(Ident, Box<Expression>),
     Loop(Loop),
+}
+
+#[derive(Debug, Clone)]
+pub enum ControlFlow {
+    Return,
 }
 
 #[derive(Debug, Clone)]
