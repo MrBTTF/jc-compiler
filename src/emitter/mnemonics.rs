@@ -208,6 +208,7 @@ pub struct Mnemonic {
     reg: u8,
     rm: u8,
     opcodes: HashMap<OperandEncoding, u8>,
+    no_op: bool,
     op1: Operand,
     op2: Operand,
     disp: Operand,
@@ -228,6 +229,7 @@ impl Display for Mnemonic {
             reg: {},
             rm: {},
             opcodes:{{ {opcodes} }},
+            no_op: {},
             op1: {},
             op2: {},
             disp: {},
@@ -239,6 +241,7 @@ impl Display for Mnemonic {
             self.has_rex_w,
             self.reg,
             self.rm,
+            self.no_op,
             self.op1,
             self.op2,
             self.disp,
@@ -258,6 +261,7 @@ impl Mnemonic {
             opcodes: HashMap::new(),
             reg: 0,
             rm: 0,
+            no_op: false,
             op1: Operand::None,
             op2: Operand::None,
             disp: Operand::None,
@@ -325,6 +329,12 @@ impl Mnemonic {
         cloned
     }
 
+    pub fn no_op(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned.no_op = true;
+        cloned
+    }
+
     pub fn op1(&self, op: impl Into<Operand>) -> Self {
         if self.op1 != Operand::None {
             panic!("op1 is already assigned")
@@ -361,6 +371,9 @@ impl Mnemonic {
     }
 
     pub fn as_vec(&mut self) -> Vec<u8> {
+        if self.no_op {
+            return vec![*self.opcodes.get(&OperandEncoding::I).unwrap()];
+        }
         let mut result = vec![];
         let mut operand_enc;
 
@@ -540,6 +553,7 @@ pub enum MnemonicName {
     Push,
     Pop,
     Call,
+    Ret,
     SysCall,
     Cmp,
     Jmp,
@@ -593,6 +607,9 @@ lazy_static! {
         .no_rex_w();
     pub static ref CALL: Mnemonic = Mnemonic::new(MnemonicName::Call)
         .opcode(0xE8, OperandEncoding::D)
+        .no_rex_w();
+    pub static ref RET: Mnemonic = Mnemonic::new(MnemonicName::Ret)
+        .opcode(0xC3, OperandEncoding::I)
         .no_rex_w();
     pub static ref SYSCALL: Mnemonic = Mnemonic::new(MnemonicName::SysCall)
         .opcode(0x0F, OperandEncoding::I)
@@ -747,6 +764,13 @@ mod tests {
     #[case::Offset32(Operand::Offset32(0xABCDEF1), vec ! [0xE8, 0xF1, 0xDE, 0xBC, 0x0A])]
     fn test_call(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = CALL.op1(op1);
+        assert_eq!(instruction.as_vec(), expected);
+    }
+
+    #[rstest]
+    #[case::NoOp(vec ! [0xC3])]
+    fn test_ret(#[case] expected: Vec<u8>) {
+        let mut instruction = RET.no_op();
         assert_eq!(instruction.as_vec(), expected);
     }
 

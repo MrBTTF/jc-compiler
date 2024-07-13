@@ -44,7 +44,7 @@ pub struct DataBuilder {
 }
 
 impl DataBuilder {
-    pub fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
+    pub fn visit_ast(&mut self, statement_list: &ast::StatementList) {
         let lit = Literal::String("%d\0".to_string());
         let lit_size = lit.len(); //TODO
         self.data_section.push(lit.len());
@@ -57,6 +57,10 @@ impl DataBuilder {
         );
         self.data_ordered.push(id.clone());
 
+        self.visit_statement_list(statement_list);
+    }
+
+    pub fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
         statement_list
             .0
             .iter()
@@ -94,7 +98,9 @@ impl DataBuilder {
                 }
                 _ => todo!(),
             },
-            ast::Statement::FuncDeclaration(_) => (),
+            ast::Statement::FuncDefinition(ast::FuncDefinition(_, _, _, stmt_list)) => {
+                self.visit_statement_list(stmt_list)
+            }
             ast::Statement::Assignment(ast::Assignment(_id, _expr)) => (),
             ast::Statement::ControlFlow(_) => (),
         }

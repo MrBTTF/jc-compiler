@@ -1,6 +1,10 @@
-let info = .Test\n
-print(info)
-info = 1234
-print(info)
-info = .\nValue\n
-print(info)
+func main() {
+    let info = .Test\n
+    print(info)
+    info = 1234
+    print(info)
+    info = .\nValue\n
+    print(info)
+
+    return
+}

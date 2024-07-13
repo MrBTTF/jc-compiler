@@ -1,10 +1,13 @@
+func dummy() {
+    return
+}
 
 func main() {
     let a = .Hello World!\n
     print(a)
     const b = .Nummer
     print(b)
-    const b1 = 33
+    let b1 = 33
     print(b1)
     let c = .\nSome test\n
     print(c)

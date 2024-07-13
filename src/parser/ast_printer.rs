@@ -27,7 +27,7 @@ impl Visitor<String> for AstPrinter {
                 let s2 = self.visit_expression(expr);
                 format!("{s1} = {s2}")
             }
-            Statement::FuncDeclaration(FuncDeclaration(name, args, return_type, stmts)) => {
+            Statement::FuncDefinition(FuncDefinition(name, args, return_type, stmts)) => {
                 let s_name = self.visit_ident(name);
                 let s_args = args.iter().fold(String::new(), |mut acc, a| {
                     let arg_name = self.visit_ident(&a.0);

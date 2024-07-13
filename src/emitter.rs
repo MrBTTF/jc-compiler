@@ -39,11 +39,11 @@ use stdlib::windows as std;
 
 pub fn build_executable(ast: &ast::StatementList, output_path: PathBuf) {
     let mut data_builder = DataBuilder::default();
-    data_builder.visit_statement_list(ast);
+    data_builder.visit_ast(ast);
     dbg!(&data_builder.variables);
 
     let mut emitter = Emitter::new(&data_builder, IMAGE_BASE);
-    emitter.visit_statement_list(ast);
+    emitter.visit_ast(ast);
 
     build(output_path, emitter, &data_builder.variables);
 }
@@ -67,31 +67,58 @@ impl Emitter {
         self.code_context.clone()
     }
 
-    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
+    fn visit_ast(&mut self, statement_list: &ast::StatementList) {
         self.code_context.add_slice(&[
             PUSH.op1(register::RBP),
             MOV.op1(register::RBP).op2(register::RSP),
         ]);
-        self.code_context.add_slice(&self.allocate_stack());
+        self.code_context.add(
+            CALL.op1(Operand::Offset32(0))
+                .symbol("main".to_string(), CallType::Local),
+        );
+        std::exit(&mut self.code_context, 0);
+
+        self.visit_statement_list(statement_list);
+    }
+
+    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
         statement_list.0.iter().for_each(|stmt| {
             self.visit_statement(stmt);
         });
-        std::exit(&mut self.code_context, 0);
     }
 
     fn visit_statement(&mut self, statement: &ast::Statement) {
         // println!("{}: {:#?}", statement_n, &statement);
         match statement {
+            ast::Statement::FuncDefinition(func_def) => {
+                self.visit_func_definition(func_def);
+            }
             ast::Statement::Expression(expr) => {
                 self.visit_expression(expr);
             }
             ast::Statement::Declaration(_) => (),
-            ast::Statement::FuncDeclaration(_) => (),
             ast::Statement::Assignment(assign) => {
                 self.visit_assignment(assign);
             }
             Statement::ControlFlow(_) => (),
         };
+    }
+
+    fn visit_func_definition(&mut self, func_def: &ast::FuncDefinition) {
+        let ast::FuncDefinition(name, args, return_type, stmt_list) = func_def;
+
+        self.code_context.set_label(name.value.clone());
+        self.code_context.add_slice(&[
+            PUSH.op1(register::RBP),
+            MOV.op1(register::RBP).op2(register::RSP),
+        ]);
+
+        let (mnemonics, size) = self.allocate_stack();
+        self.code_context.add_slice(&mnemonics);
+        self.visit_statement_list(stmt_list);
+        self.code_context.add_slice(&self.free_stack(size));
+        self.code_context.add(POP.op1(register::RBP));
+        self.code_context.add(RET.no_op());
     }
 
     fn visit_expression(&mut self, expr: &ast::Expression) {
@@ -228,8 +255,9 @@ impl Emitter {
             .add(JL.op1(Operand::Offset32(-(jump as i32))));
     }
 
-    fn allocate_stack(&self) -> Vec<Mnemonic> {
+    fn allocate_stack(&self) -> (Vec<Mnemonic>, usize) {
         let mut result = vec![];
+        let mut size = 0;
         for id in self.data_ordered.iter() {
             let data = self.literals.get(id).unwrap();
             if data.decl_type == ast::DeclarationType::Const {
@@ -237,20 +265,33 @@ impl Emitter {
             }
             result.extend(match data.decl_type {
                 ast::DeclarationType::Let => match &data.lit {
-                    ast::Literal::String(s) => push_string_on_stack(&s),
-                    ast::Literal::Number(n) => vec![
-                        MOV.op1(register::RAX).op2(n.value as u64),
-                        PUSH.op1(register::RAX),
-                    ],
+                    ast::Literal::String(s) => {
+                        let (mnemonics, pushed_size) = push_string_on_stack(&s);
+                        size += pushed_size;
+                        mnemonics
+                    }
+                    ast::Literal::Number(n) => {
+                        size += 8;
+
+                        vec![
+                            MOV.op1(register::RAX).op2(n.value as u64),
+                            PUSH.op1(register::RAX),
+                        ]
+                    }
                 },
                 ast::DeclarationType::Const => vec![],
             });
         }
 
         if result.len() % 4 != 0 {
+            size += 8;
             result.push(SUB.op1(register::RSP).op2(8_u32));
         }
-        result
+        (result, size)
+    }
+
+    fn free_stack(&self, size: usize) -> Vec<Mnemonic> {
+        vec![ADD.op1(register::RSP).op2(size as u32)]
     }
 }
 
@@ -268,12 +309,16 @@ fn str_to_u64(s: &str) -> Vec<u64> {
         })
 }
 
-fn push_string_on_stack(s: &str) -> Vec<Mnemonic> {
-    str_to_u64(s)
+fn push_string_on_stack(s: &str) -> (Vec<Mnemonic>, usize) {
+    let mut size = 0;
+    let mnemonics = str_to_u64(s)
         .iter()
         .fold(vec![], |mut acc: Vec<Mnemonic>, value| {
             acc.push(MOV.op1(register::RAX).op2(*value));
             acc.push(PUSH.op1(register::RAX));
+            size += 8;
             acc
-        })
+        });
+
+    (mnemonics, size)
 }

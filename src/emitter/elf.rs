@@ -19,11 +19,13 @@ use self::{
 };
 
 use super::{
-    code_context::{self, CodeContext, Sliceable},
-    Emitter, Ident,
+    code_context::{self, Call, CodeContext, Sliceable},
+    CallType, Emitter, Ident,
 };
 
 pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::Ident, Data>) {
+    let object_file = output_path.with_extension("o");
+
     let data_section_data = build_data_section(&variables);
 
     let code_context = emitter.get_code_context();
@@ -41,7 +43,7 @@ pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::I
     ];
     let shstrtab_section_data: Vec<u8> = build_shstrtab_section(section_names);
     let (symbols, relocations, last_local_idx) =
-        build_symbols("local/bin/hello.o", &code_context, &variables);
+        build_symbols(object_file.to_str().unwrap(), &code_context, &variables);
     let symstr = SymStr::new(symbols.as_slice());
     let symtab_section_data = symstr.get_symtab();
     let strtab_section_data = symstr.get_strtab();
@@ -104,12 +106,9 @@ pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::I
         ),
     ];
 
-    // let program_headers = &build_program_headers(text_section.len(), data_section.len());
     let header = &build_header(section_headers, 3);
 
     let header_data = header.as_slice();
-
-    let object_file = output_path.with_extension("o");
 
     let mut file = fs::File::create(&object_file).unwrap();
     file.write_all(header_data).unwrap();
@@ -190,10 +189,11 @@ fn build_symbols(
         result.push(symbol.clone());
     }
 
-    let last_local_idx = result.len();
-    dbg!(last_local_idx);
+    let mut last_local_idx = result.len();
 
     let calls = code_context.get_calls();
+    let (calls, local_calls_size) = make_local_calls_before_global(&calls);
+    last_local_idx += local_calls_size;
     for (name, call) in calls {
         let mut existing_symbols: HashMap<String, usize> = HashMap::new();
 
@@ -201,13 +201,20 @@ fn build_symbols(
             let address_loc = code_context.get_offset(*pc) + 1;
             dbg!(&call, address_loc);
 
+            let mut offset = 0;
+            let mut section = 0;
+            if let CallType::Local = call.call_type {
+                offset = code_context.get_label_offset(&name) as u64;
+                section = 1;
+            }
+
             let symbol: Symbol = Symbol {
                 name: name.clone(),
                 data_loc: address_loc as u64,
-                offset: 0,
-                section: Some(0),
+                offset,
+                section: Some(section),
                 _type: defs::STT_FUNC,
-                bind: defs::STB_GLOBAL,
+                bind: get_call_type(call.call_type),
                 ..Default::default()
             };
 
@@ -221,6 +228,7 @@ fn build_symbols(
             result.push(symbol.clone());
         }
     }
+    dbg!(last_local_idx);
 
     let start = Symbol {
         name: "_start".to_string(),
@@ -241,4 +249,27 @@ fn align(mut v: Vec<u8>, alignment: usize) -> Vec<u8> {
     let new_len = v.len() + alignment - reminder;
     v.resize(new_len, 0);
     v
+}
+
+fn make_local_calls_before_global(
+    calls: &BTreeMap<String, Call>,
+) -> (Vec<(&String, &Call)>, usize) {
+    let mut local_calls = vec![];
+    let mut global_calls = vec![];
+
+    for (name, call) in calls {
+        match call.call_type {
+            CallType::Local => local_calls.push((name, call)),
+            CallType::Global => global_calls.push((name, call)),
+        }
+    }
+    let size = local_calls.len();
+    ([local_calls, global_calls].concat(), size)
+}
+
+fn get_call_type(call_type: CallType) -> u8 {
+    match call_type {
+        CallType::Local => defs::STB_LOCAL,
+        CallType::Global => defs::STB_GLOBAL,
+    }
 }

@@ -1,7 +1,11 @@
-let info = .Loop starts\n
-print(info)
-for i in 0..5 {
-    print(i)
+func main() {
+    let info = .Loop starts\n
+    print(info)
+    for i in 0..5 {
+        print(i)
+    }
+    info = .\nLoop ends\n
+    print(info)
+    
+    return
 }
-info = .\nLoop ends\n
-print(info)

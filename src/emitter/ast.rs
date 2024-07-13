@@ -8,7 +8,7 @@ pub enum Statement {
     Expression(Expression),
     Declaration(Declaration),
     Assignment(Assignment),
-    FuncDeclaration(FuncDeclaration),
+    FuncDefinition(FuncDefinition),
     ControlFlow(ControlFlow),
 }
 
@@ -45,7 +45,7 @@ impl TryFrom<&str> for DeclarationType {
 pub struct Declaration(pub Ident, pub Expression, pub DeclarationType);
 
 #[derive(Debug, Clone)]
-pub struct FuncDeclaration(
+pub struct FuncDefinition(
     pub Ident,
     pub Vec<Arg>,
     pub Option<Ident>,

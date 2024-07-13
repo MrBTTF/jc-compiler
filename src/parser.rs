@@ -12,12 +12,12 @@ func_or_global := func ident (args) block | global
 args := (ident: ident,)*
 block := { statement_list  }
 statement_list := statement*
-statement := declaration | assignment | expression | func_declaration | control_flow
+statement := declaration | assignment | expression | func_definition | control_flow
 declaration := ("let" | "const") ident "=" expression
 assignment := ident "=" expression
 expression := literal | ident | call | loop
 control_flow := return
-func_declaration := func ident (args) ident block
+func_definition := func ident (args) ident block
 args := (ident: ident,)*
 loop := "for" ident..ident block
 call := ident(expression)
@@ -54,8 +54,8 @@ fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
 fn statement(tokens: &[Token]) -> (Option<ast::Statement>, &[Token]) {
     if let (Some(decl), tokens) = declaration(tokens) {
         (Some(ast::Statement::Declaration(decl)), &tokens)
-    } else if let (Some(func_decl), tokens) = func_declaration(tokens) {
-        (Some(ast::Statement::FuncDeclaration(func_decl)), tokens)
+    } else if let (Some(func_def), tokens) = func_definition(tokens) {
+        (Some(ast::Statement::FuncDefinition(func_def)), tokens)
     } else if let (Some(assgn), tokens) = assignment(tokens) {
         (Some(ast::Statement::Assignment(assgn)), &tokens)
     } else if let (Some(expr), tokens) = expression(tokens) {
@@ -91,7 +91,7 @@ fn declaration(tokens: &[Token]) -> (Option<ast::Declaration>, &[Token]) {
     }
 }
 
-fn func_declaration(tokens: &[Token]) -> (Option<ast::FuncDeclaration>, &[Token]) {
+fn func_definition(tokens: &[Token]) -> (Option<ast::FuncDefinition>, &[Token]) {
     if tokens.len() < 6 {
         return (None, tokens);
     }
@@ -120,10 +120,9 @@ fn func_declaration(tokens: &[Token]) -> (Option<ast::FuncDeclaration>, &[Token]
 
     let (block, tokens) = block(&tokens[1..]);
 
-    let func_declaration =
-        ast::FuncDeclaration(func_name.clone(), args, None, StatementList(block));
+    let func_definition = ast::FuncDefinition(func_name.clone(), args, None, StatementList(block));
 
-    (Some(func_declaration), tokens)
+    (Some(func_definition), tokens)
 }
 
 fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {

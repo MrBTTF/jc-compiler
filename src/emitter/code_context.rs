@@ -7,7 +7,7 @@ use elf::symbol;
 
 use super::{
     data::DataRef,
-    mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP},
+    mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP}, CallType,
 };
 
 #[derive(Debug, Clone)]
@@ -24,6 +24,7 @@ pub struct CodeContext {
     offsets: Vec<usize>,
     calls: BTreeMap<String, Call>,
     const_data: BTreeMap<usize, DataRef>,
+    labels: BTreeMap<String, usize>,
     image_base: u64,
 }
 
@@ -35,6 +36,7 @@ impl CodeContext {
             offsets: vec![0],
             calls: BTreeMap::new(),
             const_data: BTreeMap::new(),
+            labels: BTreeMap::new(),
             image_base,
         }
     }
@@ -77,6 +79,10 @@ impl CodeContext {
         }
     }
 
+    pub fn set_label(&mut self, label: String) {
+        self.labels.insert(label, self.get_code_size());
+    }
+
     pub fn get_pc(&self) -> usize {
         self.pc
     }
@@ -111,6 +117,10 @@ impl CodeContext {
 
     pub fn get_const_data(&self) -> BTreeMap<usize, DataRef> {
         self.const_data.clone()
+    }
+
+    pub fn get_label_offset(&self, label: &str) -> usize {
+        *self.labels.get(label).unwrap()
     }
 
     pub fn compute_calls(
