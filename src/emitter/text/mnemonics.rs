@@ -1,6 +1,8 @@
 use lazy_static::lazy_static;
 use std::{collections::HashMap, fmt::Display};
 
+use crate::emitter::symbols::{self, DataSymbol, SymbolType};
+
 use self::register::RegisterSize;
 
 use super::code_context::Call;
@@ -194,10 +196,10 @@ pub enum OperandEncoding {
     D,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum CallType {
-    Local,
-    Global,
+#[derive(Debug, Clone)]
+pub struct SymbolMetadata {
+    pub name: String,
+    pub _type: symbols::SymbolType,
 }
 
 #[derive(Debug, Clone)]
@@ -212,8 +214,7 @@ pub struct Mnemonic {
     op1: Operand,
     op2: Operand,
     disp: Operand,
-    symbol: Option<String>,
-    call_type: Option<CallType>,
+    symbol: Option<SymbolMetadata>,
     value_loc: usize,
 }
 
@@ -234,7 +235,6 @@ impl Display for Mnemonic {
             op2: {},
             disp: {},
             symbol: {:?},
-            call_type: {:?},
             value_loc: {},
         }}",
             self.name,
@@ -246,7 +246,6 @@ impl Display for Mnemonic {
             self.op2,
             self.disp,
             self.symbol,
-            self.call_type,
             self.value_loc,
         )
     }
@@ -266,7 +265,6 @@ impl Mnemonic {
             op2: Operand::None,
             disp: Operand::None,
             symbol: None,
-            call_type: None,
             value_loc: 0,
         }
     }
@@ -289,14 +287,8 @@ impl Mnemonic {
         cloned.value_loc
     }
 
-    pub fn get_symbol(&self) -> Option<&str> {
-        assert_eq!(self.name, MnemonicName::Call);
-        self.symbol.as_deref()
-    }
-
-    pub fn get_call_type(&self) -> Option<CallType> {
-        assert_eq!(self.name, MnemonicName::Call);
-        self.call_type
+    pub fn get_symbol(&self) -> Option<SymbolMetadata> {
+        self.symbol.clone()
     }
 
     pub fn opcode(&self, opcode: u8, operands: OperandEncoding) -> Self {
@@ -362,11 +354,18 @@ impl Mnemonic {
         cloned
     }
 
-    pub fn symbol(&mut self, symbol: String, call_type: CallType) -> Self {
-        assert_eq!(self.name, MnemonicName::Call);
+    pub fn symbol(&mut self, symbol: String) -> Self {
+        let _type = if self.name == MnemonicName::Call {
+            SymbolType::Text
+        } else {
+            SymbolType::Data(DataSymbol::Comptime)
+        };
+
         let mut cloned = self.clone();
-        cloned.symbol = Some(symbol);
-        cloned.call_type = Some(call_type);
+        cloned.symbol = Some(SymbolMetadata {
+            name: symbol,
+            _type,
+        });
         cloned
     }
 
@@ -640,7 +639,7 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
-    use crate::emitter::mnemonics::*;
+    use crate::emitter::text::mnemonics::*;
     use rstest::*;
 
     #[rstest]

@@ -43,9 +43,11 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
                 code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
             }
             DeclarationType::Const => {
-                code_context
-                    .add(MOV.op1(ARG_REGISTERS[i]).op2(0_u64))
-                    .with_const_data(&arg.symbol, arg.lit.as_vec());
+                code_context.add(
+                    MOV.op1(ARG_REGISTERS[i])
+                        .op2(0_u64)
+                        .symbol(arg.symbol.clone()),
+                );
             }
         }
     });

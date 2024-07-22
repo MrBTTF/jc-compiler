@@ -11,7 +11,10 @@ use std::{
     process::Command,
 };
 
-use elf::relocation::Rel;
+use defs::{SHN_ABS, SHN_UNDEF};
+use elf::relocation;
+
+use crate::emitter::symbols::DataSymbol;
 
 use self::{
     super::{ast, data::*},
@@ -19,16 +22,21 @@ use self::{
 };
 
 use super::{
-    code_context::{self, Call, CodeContext, Sliceable},
-    CallType, Emitter, Ident,
+    symbols::{self},
+    text::{CodeContext, Sliceable},
 };
 
-pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::Ident, Data>) {
+pub fn build(
+    output_path: PathBuf,
+    code_context: &CodeContext,
+    variables: &BTreeMap<ast::Ident, Data>,
+    symbols: &[symbols::Symbol],
+    relocations: &[symbols::Relocation],
+) {
     let object_file = output_path.with_extension("o");
 
     let data_section_data = build_data_section(&variables);
 
-    let code_context = emitter.get_code_context();
     // dbg!(&code_context);
 
     let text_section_data = code_context.to_bin();
@@ -43,11 +51,11 @@ pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::I
     ];
     let shstrtab_section_data: Vec<u8> = build_shstrtab_section(section_names);
     let (symbols, relocations, last_local_idx) =
-        build_symbols(object_file.to_str().unwrap(), &code_context, &variables);
+        build_symbols(object_file.to_str().unwrap(), relocations, &symbols);
     let symstr = SymStr::new(symbols.as_slice());
     let symtab_section_data = symstr.get_symtab();
     let strtab_section_data = symstr.get_strtab();
-    let relocation_section_data: Vec<u8> = build_rel_text_section(&relocations);
+    let relocation_section_data: Vec<u8> = build_rel_text_section(relocations.as_slice());
 
     let section_headers = &[
         SectionHeader::new(
@@ -141,99 +149,107 @@ pub fn build(output_path: PathBuf, emitter: Emitter, variables: &BTreeMap<ast::I
 
 fn build_symbols(
     filename: &str,
-    code_context: &CodeContext,
-    variables: &BTreeMap<ast::Ident, Data>,
+    relocations: &[symbols::Relocation],
+    symbols: &[symbols::Symbol],
 ) -> (Vec<Symbol>, Vec<Relocation>, usize) {
     let file = Symbol {
         name: filename.to_string(),
         offset: 0,
         _type: defs::STT_FILE,
         bind: defs::STB_LOCAL,
+        section: SHN_ABS,
         ..Default::default()
     };
     let text = Symbol {
         offset: 0,
-        section: Some(1),
+        section: 1,
         _type: defs::STT_SECTION,
         bind: defs::STB_LOCAL,
         ..Default::default()
     };
     let data = Symbol {
         offset: 0,
-        section: Some(2),
+        section: 2,
         _type: defs::STT_SECTION,
         bind: defs::STB_LOCAL,
         ..Default::default()
     };
+
     let mut result = vec![file, text, data];
+    let last_idx = result.len();
 
-    let mut relocations = vec![];
-    for (pc, d) in code_context.get_const_data() {
-        let offset = variables
-            .get(&Ident {
-                value: d.symbol.to_string(),
-            })
-            .unwrap()
-            .data_loc;
-        let data_loc = (code_context.get_offset(pc) + d.offset) as u64;
-        let symbol = Symbol {
-            name: d.symbol.to_string(),
-            offset,
-            data_loc: data_loc,
-            section: Some(2),
-            _type: defs::STT_OBJECT,
-            bind: defs::STB_LOCAL,
-            ..Default::default()
+    let mut relocations_result = vec![];
+    let mut symbol_idxs = BTreeMap::new();
+    for (idx, symbol) in symbols.iter().enumerate() {
+        let _type = match symbol.get_type() {
+            symbols::SymbolType::Data(DataSymbol::Comptime) => defs::STT_OBJECT,
+            symbols::SymbolType::Text => defs::STT_FUNC,
+            _ => continue,
         };
-        relocations.push(Relocation::new(result.len(), data_loc, symbol._type));
-        result.push(symbol.clone());
+
+        symbol_idxs.insert(symbol.get_name(), last_idx + idx + 1);
+
+        let section = match symbol.get_section() {
+            symbols::Section::Undefined => SHN_UNDEF,
+            symbols::Section::Text => 1,
+            symbols::Section::Data => 2,
+            symbols::Section::Absolute => SHN_ABS,
+        };
+
+        let bind = match symbol.get_scope() {
+            symbols::SymbolScope::Local => defs::STB_LOCAL,
+            symbols::SymbolScope::Global => defs::STB_GLOBAL,
+        };
+
+        let symbol = Symbol {
+            name: symbol.get_name().to_string(),
+            offset: symbol.get_offset() as u64,
+            section,
+            _type: _type,
+            bind,
+        };
+        result.push(symbol);
     }
 
-    let mut last_local_idx = result.len();
-
-    let calls = code_context.get_calls();
-    let (calls, local_calls_size) = make_local_calls_before_global(&calls);
-    last_local_idx += local_calls_size;
-    for (name, call) in calls {
-        let mut existing_symbols: HashMap<String, usize> = HashMap::new();
-
-        for pc in &call.offsets {
-            let address_loc = code_context.get_offset(*pc) + 1;
-            dbg!(&call, address_loc);
-
-            let mut offset = 0;
-            let mut section = 0;
-            if let CallType::Local = call.call_type {
-                offset = code_context.get_label_offset(&name) as u64;
-                section = 1;
-            }
-
-            let symbol: Symbol = Symbol {
-                name: name.clone(),
-                data_loc: address_loc as u64,
-                offset,
-                section: Some(section),
-                _type: defs::STT_FUNC,
-                bind: get_call_type(call.call_type),
-                ..Default::default()
-            };
-
-            if let Entry::Occupied(s) = existing_symbols.entry(name.clone()) {
-                relocations.push(Relocation::new(*s.get(), address_loc as u64, symbol._type));
-                continue;
-            }
-
-            existing_symbols.insert(symbol.name.to_string(), result.len());
-            relocations.push(Relocation::new(result.len(), symbol.data_loc, symbol._type));
-            result.push(symbol.clone());
-        }
-    }
+    let last_local_idx = result.len();
     dbg!(last_local_idx);
+
+    for rel in relocations {
+        let idx = match symbol_idxs.get(rel.get_symbol()) {
+            Some(idx) => *idx,
+            None => {
+                let _type = match rel.get_type() {
+                    symbols::SymbolType::Data(DataSymbol::Comptime) => defs::STT_OBJECT,
+                    symbols::SymbolType::Text => defs::STT_FUNC,
+                    _ => unreachable!(),
+                };
+                let symbol = Symbol {
+                    name: rel.get_symbol().to_string(),
+                    offset: 0,
+                    section: SHN_UNDEF,
+                    _type,
+                    bind: defs::STB_GLOBAL,
+                };
+                let idx = result.len() + 1;
+                symbol_idxs.insert(rel.get_symbol(), idx);
+
+                result.push(symbol);
+                idx
+            }
+        };
+        let _type = match rel.get_type() {
+            symbols::SymbolType::Data(DataSymbol::Comptime) => defs::STT_OBJECT,
+            symbols::SymbolType::Text => defs::STT_FUNC,
+            _ => continue,
+        };
+
+        relocations_result.push(Relocation::new(idx, rel.get_offset() as u64, _type));
+    }
 
     let start = Symbol {
         name: "_start".to_string(),
         offset: 0,
-        section: Some(1),
+        section: 1,
         _type: defs::STT_NOTYPE,
         bind: defs::STB_GLOBAL,
         ..Default::default()
@@ -241,7 +257,7 @@ fn build_symbols(
 
     result.push(start);
 
-    (result, relocations, last_local_idx)
+    (result, relocations_result, last_local_idx)
 }
 
 fn align(mut v: Vec<u8>, alignment: usize) -> Vec<u8> {
@@ -251,25 +267,25 @@ fn align(mut v: Vec<u8>, alignment: usize) -> Vec<u8> {
     v
 }
 
-fn make_local_calls_before_global(
-    calls: &BTreeMap<String, Call>,
-) -> (Vec<(&String, &Call)>, usize) {
-    let mut local_calls = vec![];
-    let mut global_calls = vec![];
+// fn make_local_calls_before_global(
+//     calls: &BTreeMap<String, Call>,
+// ) -> (Vec<(&String, &Call)>, usize) {
+//     let mut local_calls = vec![];
+//     let mut global_calls = vec![];
 
-    for (name, call) in calls {
-        match call.call_type {
-            CallType::Local => local_calls.push((name, call)),
-            CallType::Global => global_calls.push((name, call)),
-        }
-    }
-    let size = local_calls.len();
-    ([local_calls, global_calls].concat(), size)
-}
+//     for (name, call) in calls {
+//         match call.call_type {
+//             CallType::Local => local_calls.push((name, call)),
+//             CallType::Global => global_calls.push((name, call)),
+//         }
+//     }
+//     let size = local_calls.len();
+//     ([local_calls, global_calls].concat(), size)
+// }
 
-fn get_call_type(call_type: CallType) -> u8 {
-    match call_type {
-        CallType::Local => defs::STB_LOCAL,
-        CallType::Global => defs::STB_GLOBAL,
-    }
-}
+// fn get_call_type(call_type: CallType) -> u8 {
+//     match call_type {
+//         CallType::Local => defs::STB_LOCAL,
+//         CallType::Global => defs::STB_GLOBAL,
+//     }
+// }

@@ -3,18 +3,17 @@ use std::{
     mem, usize,
 };
 
-use elf::symbol;
+use crate::emitter::symbols::{Relocation, Section, Symbol, SymbolType};
 
 use super::{
-    data::DataRef,
-    mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP}, CallType,
+    super::data::DataRef,
+    mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP},
 };
 
 #[derive(Debug, Clone)]
 pub struct Call {
     pub symbol: String,
     pub offsets: Vec<usize>,
-    pub call_type: mnemonics::CallType,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +24,8 @@ pub struct CodeContext {
     calls: BTreeMap<String, Call>,
     const_data: BTreeMap<usize, DataRef>,
     labels: BTreeMap<String, usize>,
+    symbols: BTreeMap<String, Symbol>,
+    relocations: Vec<Relocation>,
     image_base: u64,
 }
 
@@ -37,28 +38,26 @@ impl CodeContext {
             calls: BTreeMap::new(),
             const_data: BTreeMap::new(),
             labels: BTreeMap::new(),
+            symbols: BTreeMap::new(),
+            relocations: vec![],
             image_base,
         }
     }
 
     pub fn add(&mut self, mnemonic: Mnemonic) -> &mut Self {
-        if let MnemonicName::Call = mnemonic.get_name() {
-            let symbol = mnemonic.get_symbol().unwrap().to_string();
-            match self.calls.entry(symbol.clone()) {
-                btree_map::Entry::Vacant(c) => {
-                    c.insert(Call {
-                        symbol: symbol.clone(),
-                        offsets: vec![self.pc],
-                        call_type: mnemonic.get_call_type().unwrap(),
-                    });
-                }
-                btree_map::Entry::Occupied(mut c) => c.get_mut().offsets.push(self.pc),
-            }
-        }
+        let code_size = self.get_code_size();
         self.instructions.push(mnemonic.clone());
         self.pc += 1;
         self.offsets
             .push(self.offsets.last().unwrap() + mnemonic.clone().as_vec().len());
+        if let Some(symbol) = mnemonic.get_symbol() {
+            let relocation = Relocation::new(
+                symbol.name.to_string(),
+                code_size + self.last().get_value_loc(),
+                symbol._type,
+            );
+            self.relocations.push(relocation);
+        }
         self
     }
 
@@ -119,8 +118,16 @@ impl CodeContext {
         self.const_data.clone()
     }
 
+    pub fn get_relocations(&self) -> &[Relocation] {
+        &self.relocations
+    }
+
     pub fn get_label_offset(&self, label: &str) -> usize {
         *self.labels.get(label).unwrap()
+    }
+
+    pub fn get_labels(&self) -> BTreeMap<String, usize> {
+        self.labels.clone()
     }
 
     pub fn compute_calls(
@@ -187,8 +194,8 @@ mod tests {
     };
     use tempfile::NamedTempFile;
 
-    use crate::emitter::mnemonics::Operand::Offset32;
-    use crate::emitter::{code_context::CodeContext, mnemonics::*};
+    use crate::emitter::text::mnemonics::Operand::Offset32;
+    use crate::emitter::text::{mnemonics::*, CodeContext};
 
     use rstest::*;
 

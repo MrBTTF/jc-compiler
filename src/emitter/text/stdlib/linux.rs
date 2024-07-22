@@ -1,6 +1,7 @@
-use abi::linux::*;
-
-use crate::emitter::{code_context::CodeContext, *};
+use crate::emitter::{
+    data::*,
+    text::{abi::linux::*, mnemonics::*, CodeContext},
+};
 
 pub fn print(code_context: &mut CodeContext, data: Data) {
     code_context.add_slice(&[
@@ -18,9 +19,11 @@ pub fn printd(code_context: &mut CodeContext) {
             .op2(register::RSI)
             .disp(Operand::Offset32(0)),
         XOR.op1(register::RAX).op2(register::RAX), // number of vector registers
-        CALL.op1(Operand::Offset32(0)).symbol("printf".to_string(), CallType::Global),
+        CALL.op1(Operand::Offset32(0))
+            .symbol("printf".to_string()),
         XOR.op1(register::RDI).op2(register::RDI),
-        CALL.op1(Operand::Offset32(0)).symbol("fflush".to_string(), CallType::Global),
+        CALL.op1(Operand::Offset32(0))
+            .symbol("fflush".to_string()),
     ]);
 }
 

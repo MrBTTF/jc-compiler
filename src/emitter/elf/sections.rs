@@ -1,13 +1,15 @@
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap},
-    ffi::CString,
     mem,
-    os::unix::raw::off_t,
 };
 
 use elf::section;
 
-use crate::emitter::{ast, code_context::Sliceable};
+use crate::emitter::{
+    ast,
+    symbols::{DataSymbol, SymbolType},
+    text::Sliceable,
+};
 
 use super::{defs, Data, DataRef};
 
@@ -254,8 +256,7 @@ pub fn build_shstrtab_section(section_names: &[&str]) -> Vec<u8> {
 pub struct Symbol {
     pub name: String,
     pub offset: u64,
-    pub data_loc: u64,
-    pub section: Option<u16>,
+    pub section: u16,
     pub _type: u8,
     pub bind: u8,
 }
@@ -281,7 +282,7 @@ impl SymStr {
             };
             let st_info = (symbol.bind << 4) + symbol._type;
 
-            let st_shndx = symbol.section.unwrap_or(0xfff1);
+            let st_shndx = symbol.section;
 
             let symbol_table = SymbolTable {
                 st_name: st_name,
@@ -322,35 +323,33 @@ impl Relocation {
     }
 }
 
-pub fn build_rel_text_section(relocations: &Vec<Relocation>) -> Vec<u8> {
+pub fn build_rel_text_section(relocations: &[Relocation]) -> Vec<u8> {
     let mut result = vec![];
     for rel in relocations {
-        if rel._type != defs::STT_OBJECT && rel._type != defs::STT_FUNC {
-            continue;
-        }
-
-        if rel._type == defs::STT_FUNC {
-            let sym = (rel.symbol + 1) << 32;
-            let _type = 4_u64;
-            let info = sym + _type;
-            let rel = RelocationTable {
-                r_offset: rel.offset,
-                r_info: info as u64,
-                r_addend: -0x4,
-            };
-            result.extend(rel.as_vec());
-            continue;
-        }
-
-        let sym = (rel.symbol + 1) << 32;
-        let _type = 1_u64;
-        let info = sym + _type;
-        let rel = RelocationTable {
-            r_offset: rel.offset,
-            r_info: info as u64,
-            r_addend: 0x0,
+        let (r_info, r_addend) = match rel._type {
+            defs::STT_OBJECT => {
+                let sym = (rel.symbol) << 32;
+                let _type = 1;
+                let info = sym + _type;
+                (info, 0x0)
+            }
+            defs::STT_FUNC => {
+                let sym = (rel.symbol) << 32;
+                let _type = 4;
+                let info = sym + _type;
+                (info, -0x4)
+            }
+            _ => continue,
         };
-        result.extend(rel.as_vec())
+
+        result.extend(
+            RelocationTable {
+                r_offset: rel.offset,
+                r_info: r_info,
+                r_addend: r_addend,
+            }
+            .as_vec(),
+        )
     }
     result
 }
