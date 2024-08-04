@@ -111,3 +111,6 @@ pub const STT_OBJECT: u8 = 1;
 pub const STT_FUNC: u8 = 2;
 pub const STT_SECTION: u8 = 3;
 pub const STT_FILE: u8 = 4;
+
+pub const SHN_UNDEF: u16 = 0;
+pub const SHN_ABS: u16 = 0xfff1;

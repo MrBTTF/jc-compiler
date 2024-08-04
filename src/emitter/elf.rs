@@ -2,7 +2,7 @@ pub mod defs;
 pub mod sections;
 
 use std::{
-    collections::{hash_map::Entry, BTreeMap, HashMap},
+    collections::{hash_map::Entry, HashMap},
     fmt::Result,
     fs,
     io::Write,
@@ -29,13 +29,13 @@ use super::{
 pub fn build(
     output_path: PathBuf,
     code_context: &CodeContext,
-    variables: &BTreeMap<ast::Ident, Data>,
+    symbol_data: &HashMap<ast::Ident, Data>,
     symbols: &[symbols::Symbol],
     relocations: &[symbols::Relocation],
 ) {
     let object_file = output_path.with_extension("o");
 
-    let data_section_data = build_data_section(&variables);
+    let data_section_data = build_data_section(&symbol_data);
 
     // dbg!(&code_context);
 
@@ -179,7 +179,7 @@ fn build_symbols(
     let last_idx = result.len();
 
     let mut relocations_result = vec![];
-    let mut symbol_idxs = BTreeMap::new();
+    let mut symbol_idxs = HashMap::new();
     for (idx, symbol) in symbols.iter().enumerate() {
         let _type = match symbol.get_type() {
             symbols::SymbolType::Data(DataSymbol::Comptime) => defs::STT_OBJECT,
@@ -268,7 +268,7 @@ fn align(mut v: Vec<u8>, alignment: usize) -> Vec<u8> {
 }
 
 // fn make_local_calls_before_global(
-//     calls: &BTreeMap<String, Call>,
+//     calls: &HashMap<String, Call>,
 // ) -> (Vec<(&String, &Call)>, usize) {
 //     let mut local_calls = vec![];
 //     let mut global_calls = vec![];

@@ -1,7 +1,15 @@
 use crate::emitter::ast::{Ident, Literal, Loop};
-use std::collections::BTreeMap;
+use std::{
+    borrow::BorrowMut,
+    collections::{hash_map::Entry, HashMap},
+    hash::Hash,
+    rc::Rc,
+};
 
-use super::ast::{self, DeclarationType};
+use super::{
+    ast::{self, DeclarationType},
+    StatementList,
+};
 
 #[derive(Default, Debug, Clone)]
 pub struct DataRef {
@@ -36,11 +44,10 @@ impl Data {
 
 #[derive(Default, Debug)]
 pub struct DataBuilder {
-    pub variables: BTreeMap<ast::Ident, Data>,
-    pub data_ordered: Vec<ast::Ident>,
+    pub symbol_data: HashMap<ast::Ident, Data>,
+    pub scope_symbols: HashMap<usize, Vec<ast::Ident>>,
     data_section: Vec<usize>,
     stack: Vec<usize>,
-    current_line: usize,
 }
 
 impl DataBuilder {
@@ -51,23 +58,29 @@ impl DataBuilder {
         let id = Ident {
             value: "__printf_d_arg".to_string(),
         };
-        self.variables.insert(
+        self.symbol_data.insert(
             id.clone(),
             Data::new(&id.value, lit, 0 as u64, DeclarationType::Const),
         );
-        self.data_ordered.push(id.clone());
+        self.add_to_scope(&statement_list, vec![id.clone()]);
 
         self.visit_statement_list(statement_list);
     }
 
     pub fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
-        statement_list
-            .0
-            .iter()
-            .for_each(|stmt| self.visit_statement(stmt));
+        let mut stack = vec![];
+        statement_list.stmts.iter().for_each(|stmt| {
+            let ids = self.visit_statement(stmt, &mut stack);
+            self.add_to_scope(statement_list, ids);
+        });
     }
 
-    fn visit_statement(&mut self, statement: &ast::Statement) {
+    fn visit_statement(
+        &mut self,
+        statement: &ast::Statement,
+        stack: &mut Vec<usize>,
+    ) -> Vec<ast::Ident> {
+        let mut ids = vec![];
         match statement {
             ast::Statement::Expression(expr) => match expr {
                 ast::Expression::Loop(l) => self.visit_loop(l),
@@ -82,8 +95,8 @@ impl DataBuilder {
                             if remainder != 0 {
                                 data_size += 8 - remainder;
                             }
-                            self.stack.push(data_size);
-                            self.stack.iter().sum()
+                            stack.push(data_size);
+                            stack.iter().sum()
                         }
                         DeclarationType::Const => {
                             let data_loc = self.data_section.iter().sum();
@@ -93,18 +106,19 @@ impl DataBuilder {
                     };
                     let data: Data =
                         Data::new(&id.value, lit.clone(), data_loc as u64, *assign_type);
-                    self.variables.insert(id.clone(), data.clone());
-                    self.data_ordered.push(id.clone());
+                    self.symbol_data.insert(id.clone(), data.clone());
+                    ids.push(id.clone());
                 }
                 _ => todo!(),
             },
             ast::Statement::FuncDefinition(ast::FuncDefinition(_, _, _, stmt_list)) => {
                 self.visit_statement_list(stmt_list)
             }
+            ast::Statement::Scope(stmt_list) => self.visit_statement_list(stmt_list),
             ast::Statement::Assignment(ast::Assignment(_id, _expr)) => (),
             ast::Statement::ControlFlow(_) => (),
         }
-        self.current_line += 1;
+        ids
     }
 
     // fn visit_declaration(&mut self, statement: &ast::Statement) {}
@@ -124,7 +138,18 @@ impl DataBuilder {
         };
 
         let data = Data::new(&id.value, lit, data_loc as u64, ast::DeclarationType::Let);
-        self.variables.insert(id.clone(), data.clone());
-        self.data_ordered.push(id.clone());
+        self.symbol_data.insert(id.clone(), data.clone());
+        self.add_to_scope(&l.body, vec![id.clone()]);
+    }
+
+    fn add_to_scope(&mut self, stmts: &StatementList, id: Vec<ast::Ident>) {
+        match self.scope_symbols.entry(stmts.id) {
+            Entry::Vacant(v) => {
+                v.insert(id);
+            }
+            Entry::Occupied(mut o) => {
+                o.get_mut().extend(id);
+            }
+        }
     }
 }

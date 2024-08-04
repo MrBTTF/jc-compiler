@@ -35,6 +35,7 @@ fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
     let (mut stmt, mut tokens) = statement(tokens);
     while stmt.is_some() {
         // dbg!(&stmt);
+        // dbg!(&tokens[0..4]);
 
         // panic!("stop");
         assert_eq!(
@@ -104,7 +105,7 @@ fn func_definition(tokens: &[Token]) -> (Option<ast::FuncDefinition>, &[Token]) 
         _ => return (None, tokens),
     };
 
-    let mut args = vec![];
+    let mut args: Vec<ast::Arg> = vec![];
     let mut tokens = &tokens[3..];
     for arg in tokens.chunks(2) {
         if let Token::Ident(arg_name) = &arg[0] {
@@ -120,7 +121,8 @@ fn func_definition(tokens: &[Token]) -> (Option<ast::FuncDefinition>, &[Token]) 
 
     let (block, tokens) = block(&tokens[1..]);
 
-    let func_definition = ast::FuncDefinition(func_name.clone(), args, None, StatementList(block));
+    let func_definition =
+        ast::FuncDefinition(func_name.clone(), args, None, StatementList::new(block));
 
     (Some(func_definition), tokens)
 }
@@ -142,8 +144,8 @@ fn assignment(tokens: &[Token]) -> (Option<ast::Assignment>, &[Token]) {
 }
 
 fn expression(tokens: &[Token]) -> (Option<ast::Expression>, &[Token]) {
-    if let (Some((id, expr)), tokens) = call(tokens) {
-        return (Some(ast::Expression::Call(id, Box::new(expr))), tokens);
+    if let (Some((id, exprs)), tokens) = call(tokens) {
+        return (Some(ast::Expression::Call(id, exprs)), tokens);
     } else if let (Some(l), tokens) = _loop(tokens) {
         return (Some(ast::Expression::Loop(l)), tokens);
     } else if let (Some(literal), tokens) = literal(tokens) {
@@ -190,7 +192,7 @@ fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {
             var: ast::Ident { value: var },
             start,
             end,
-            body,
+            body: ast::StatementList::new(body),
         }),
         tokens,
     )
@@ -224,7 +226,7 @@ fn number(number: &i64) -> ast::Number {
     }
 }
 
-fn call(tokens: &[Token]) -> (Option<(ast::Ident, ast::Expression)>, &[Token]) {
+fn call(tokens: &[Token]) -> (Option<(ast::Ident, Vec<ast::Expression>)>, &[Token]) {
     let id: ast::Ident = {
         let Token::Ident(id) = &tokens[0] else {
             return (None, tokens);
@@ -237,16 +239,22 @@ fn call(tokens: &[Token]) -> (Option<(ast::Ident, ast::Expression)>, &[Token]) {
         _ => return (None, tokens),
     };
 
+    dbg!(&tokens[3..]);
+
+    if &arg_tokens[0] == &Token::RightP {
+        return (Some((id, vec![])), &tokens[3..]);
+    }
+
     let (expr, rest_tokens) = expression(arg_tokens);
     assert_eq!(rest_tokens.first().unwrap(), &Token::RightP, "expected )");
 
-    (expr.map(|expr| (id, expr)), &rest_tokens[1..])
+    (expr.map(|expr| (id, vec![expr])), &rest_tokens[1..])
 }
 
 pub fn parse(tokens: Vec<Token>) -> StatementList {
     let (statment_list, tokens) = block(&tokens);
     assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
-    StatementList(statment_list.into_iter().collect())
+    StatementList::new(statment_list.into_iter().collect())
 }
 
 fn skip(tokens: &[Token], to_skip: Token) -> &[Token] {

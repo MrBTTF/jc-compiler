@@ -7,7 +7,7 @@ pub struct AstPrinter;
 impl Visitor<String> for AstPrinter {
     fn visit_statement_list(&mut self, statement_list: &StatementList) -> String {
         statement_list
-            .0
+            .stmts
             .iter()
             .map(|stmt| self.visit_statement(stmt))
             .collect::<Vec<_>>()
@@ -47,6 +47,9 @@ impl Visitor<String> for AstPrinter {
 
                 format!("func {result} {{\n {s_stmts} \n}}")
             }
+            Statement::Scope(stmts) => {
+                format!("{{\n{}\n}}", self.visit_statement_list(stmts))
+            }
             Statement::ControlFlow(_) => format!(""),
         }
     }
@@ -55,14 +58,18 @@ impl Visitor<String> for AstPrinter {
         match expression {
             Expression::Ident(ident) => self.visit_ident(ident),
             Expression::Literal(literal) => self.visit_literal(literal),
-            Expression::Call(ident, expr) => {
+            Expression::Call(ident, exprs) => {
                 let s1 = self.visit_ident(ident);
-                let s2 = self.visit_expression(expr);
+                let s2 = exprs
+                    .iter()
+                    .map(|expr| self.visit_expression(expr))
+                    .collect::<Vec<String>>()
+                    .join(", ");
                 s1 + "(" + &s2 + ")"
             }
             Expression::Loop(l) => {
                 let s = format!("for {} in {}..{}", l.var.value, l.start, l.end);
-                let body = self.visit_statement_list(&StatementList(l.body.clone()));
+                let body = self.visit_statement_list(&l.body);
 
                 s + " {\n" + &body + "\n}\n"
             }

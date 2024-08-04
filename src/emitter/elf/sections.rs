@@ -337,7 +337,7 @@ pub fn build_rel_text_section(relocations: &[Relocation]) -> Vec<u8> {
                 let sym = (rel.symbol) << 32;
                 let _type = 4;
                 let info = sym + _type;
-                (info, -0x4)
+                (info, -0x4)  // Next pc address minus value address in CALL
             }
             _ => continue,
         };
@@ -354,7 +354,7 @@ pub fn build_rel_text_section(relocations: &[Relocation]) -> Vec<u8> {
     result
 }
 
-pub fn build_data_section(literals: &BTreeMap<ast::Ident, Data>) -> Vec<u8> {
+pub fn build_data_section(literals: &HashMap<ast::Ident, Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
         .filter_map(|(id, data)| match data.decl_type {

@@ -26,17 +26,17 @@ mod text;
 pub fn build_executable(ast: &ast::StatementList, output_path: PathBuf) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_ast(ast);
-    dbg!(&data_builder.variables);
+    dbg!(&data_builder.symbol_data);
 
     let code_context = text::build_code_context(ast, &data_builder, IMAGE_BASE);
 
     let symbol_resolver = SymbolResolver::new();
-    let symbols = symbol_resolver.resolve(&data_builder.variables, &code_context.get_labels());
+    let symbols = symbol_resolver.resolve(&data_builder.symbol_data, &code_context.get_labels());
 
     build(
         output_path,
         &code_context,
-        &data_builder.variables,
+        &data_builder.symbol_data,
         symbols.as_slice(),
         code_context.get_relocations(),
     );

@@ -1,7 +1,26 @@
-use std::{fmt::Display, mem};
+use std::{
+    fmt::Display,
+    hash::Hash,
+    mem,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Debug, Clone)]
-pub struct StatementList(pub Vec<Statement>);
+pub struct StatementList {
+    pub id: usize,
+    pub stmts: Vec<Statement>,
+}
+
+impl StatementList {
+    pub fn new(stmts: Vec<Statement>) -> Self {
+        Self {
+            id: COUNTER.fetch_add(1, Ordering::Relaxed),
+            stmts,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -9,10 +28,11 @@ pub enum Statement {
     Declaration(Declaration),
     Assignment(Assignment),
     FuncDefinition(FuncDefinition),
+    Scope(StatementList),
     ControlFlow(ControlFlow),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DeclarationType {
     Let,
     Const,
@@ -63,7 +83,7 @@ pub struct Assignment(pub Ident, pub Expression);
 pub enum Expression {
     Ident(Ident),
     Literal(Literal),
-    Call(Ident, Box<Expression>),
+    Call(Ident, Vec<Expression>),
     Loop(Loop),
 }
 
@@ -108,7 +128,7 @@ pub struct Loop {
     pub var: Ident,
     pub start: u64,
     pub end: u64,
-    pub body: Vec<Statement>,
+    pub body: StatementList,
 }
 
 pub trait Visitor<T> {

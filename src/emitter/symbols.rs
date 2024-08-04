@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::{data::Data, DeclarationType, Ident};
 
@@ -111,14 +111,14 @@ impl SymbolResolver {
 
     pub fn resolve(
         &self,
-        variables: &BTreeMap<Ident, Data>,
+        symbol_data: &HashMap<Ident, Data>,
         labels: &BTreeMap<String, usize>,
     ) -> Vec<Symbol> {
         let mut symbols = vec![];
 
-        for (id, data) in variables {
+        for (id, data) in symbol_data {
             if let DeclarationType::Let = data.decl_type {
-                continue
+                continue;
             };
             symbols.push(Symbol::new(
                 id.value.clone(),
