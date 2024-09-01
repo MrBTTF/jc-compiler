@@ -5,20 +5,15 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-static COUNTER: AtomicUsize = AtomicUsize::new(1);
-
 #[derive(Debug, Clone)]
 pub struct StatementList {
-    pub id: usize,
+    pub id: String,
     pub stmts: Vec<Statement>,
 }
 
 impl StatementList {
-    pub fn new(stmts: Vec<Statement>) -> Self {
-        Self {
-            id: COUNTER.fetch_add(1, Ordering::Relaxed),
-            stmts,
-        }
+    pub fn new(id: String, stmts: Vec<Statement>) -> Self {
+        Self { id, stmts }
     }
 }
 
@@ -73,7 +68,43 @@ pub struct FuncDefinition(
 );
 
 #[derive(Debug, Clone)]
-pub struct Arg(pub Ident, pub Ident);
+pub enum Type {
+    String,
+    Number,
+    Ref(Box<Type>),
+}
+
+impl From<&str> for Type {
+    fn from(value: &str) -> Self {
+        match value {
+            "String" => Type::String,
+            "Number" => Type::Number,
+            _ => panic!("inlaid type: {}", value),
+        }
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::String => f.write_str("String"),
+            Type::Number => f.write_str("Number"),
+            Type::Ref(t) => f.write_fmt(format_args!("&{}", t)),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Arg {
+    pub name: Ident,
+    pub _type: Type,
+}
+
+impl Arg {
+    pub fn new(name: Ident, _type: Type) -> Self {
+        Self { name, _type }
+    }
+}
 
 #[derive(Debug, Clone)]
 

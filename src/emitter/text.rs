@@ -1,7 +1,10 @@
 pub mod abi;
 pub mod mnemonics;
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    mem,
+};
 
 pub use code_context::*;
 
@@ -26,8 +29,8 @@ pub fn build_code_context(
 
 pub struct TextBuilder {
     code_context: CodeContext,
-    symbol_data: HashMap<ast::Ident, Data>,
-    scope_symbols: HashMap<usize, Vec<ast::Ident>>,
+    symbol_data: HashMap<String, Data>,
+    scope_symbols: HashMap<String, Vec<String>>,
 }
 
 impl TextBuilder {
@@ -60,25 +63,25 @@ impl TextBuilder {
         let (mnemonics, size) = self.allocate_stack(&statement_list);
         self.code_context.add_slice(&mnemonics);
         statement_list.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt);
+            self.visit_statement(stmt, &statement_list.id);
         });
         if size != 0 {
             self.code_context.add_slice(&self.free_stack(size));
         }
     }
 
-    fn visit_statement(&mut self, statement: &ast::Statement) {
+    fn visit_statement(&mut self, statement: &ast::Statement, scope: &str) {
         // println!("{}: {:#?}", statement_n, &statement);
         match statement {
             ast::Statement::FuncDefinition(func_def) => {
                 self.visit_func_definition(func_def);
             }
             ast::Statement::Expression(expr) => {
-                self.visit_expression(expr);
+                self.visit_expression(expr, scope);
             }
             ast::Statement::Declaration(_) => (),
             ast::Statement::Assignment(assign) => {
-                self.visit_assignment(assign);
+                self.visit_assignment(assign, scope);
             }
             Statement::Scope(stmts) => (),
             Statement::ControlFlow(_) => (),
@@ -93,22 +96,42 @@ impl TextBuilder {
             PUSH.op1(register::RBP),
             MOV.op1(register::RBP).op2(register::RSP),
         ]);
+        args.iter()
+            .rev()
+            .enumerate()
+            .for_each(|(i, arg)| match arg._type {
+                ast::Type::Ref(_) => (),
+                _ => {
+                    self.code_context.add(PUSH.op1(abi::ARG_REGISTERS[i]));
+                }
+            });
+
         self.visit_statement_list(stmt_list);
+
+        args.iter()
+            .enumerate()
+            .for_each(|(i, arg)| match arg._type {
+                ast::Type::Ref(_) => (),
+                _ => {
+                    self.code_context.add(POP.op1(abi::ARG_REGISTERS[i]));
+                }
+            });
+
         self.code_context.add(POP.op1(register::RBP));
         self.code_context.add(RET.no_op());
     }
 
-    fn visit_expression(&mut self, expr: &ast::Expression) {
+    fn visit_expression(&mut self, expr: &ast::Expression, scope: &str) {
         match expr {
             ast::Expression::Call(id, exprs) => {
-                self.visit_call(id, exprs);
+                self.visit_call(id, exprs, scope);
             }
-            ast::Expression::Loop(l) => self.visit_loop(l),
+            ast::Expression::Loop(l) => self.visit_loop(l, scope),
             _ => (),
         }
     }
 
-    fn visit_assignment(&mut self, assign: &ast::Assignment) {
+    fn visit_assignment(&mut self, assign: &ast::Assignment, scope: &str) {
         let ast::Assignment(id, expr) = assign;
 
         match expr {
@@ -118,10 +141,10 @@ impl TextBuilder {
                     Literal::Number(n) => vec![n.value as u64],
                 };
 
-                let data = self
-                    .symbol_data
-                    .get_mut(id)
-                    .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
+                let mut data = self
+                    .get_symbol_data(&scope, &id.value)
+                    .unwrap_or_else(|| panic!("undefined variable: {}", id.value))
+                    .clone();
                 if data.decl_type == DeclarationType::Const {
                     panic!("Cannot assign to const data: {data:#?}");
                 }
@@ -157,31 +180,30 @@ impl TextBuilder {
         };
     }
 
-    fn visit_call(&mut self, id: &ast::Ident, exprs: &[ast::Expression]) {
+    fn visit_call(&mut self, id: &ast::Ident, exprs: &[ast::Expression], scope: &str) {
         if id.value == "print" {
-            let data = match exprs.first() {
+            let mut data = match exprs.first() {
                 Some(ast::Expression::Ident(id)) => self
-                    .symbol_data
-                    .get(&id)
-                    .unwrap_or_else(|| panic!("undefined variable: {}", id.value)),
+                    .get_symbol_data(&scope, &id.value)
+                    .unwrap_or_else(|| panic!("undefined variable: {}::{}", &scope, id.value))
+                    .clone(),
                 _ => panic!("Function print expects on argument"),
             };
             match data.lit {
                 ast::Literal::String(_) => {
-                    let args = &[data.clone()];
-                    abi::push_args(&mut self.code_context, args);
+                    let args = vec![data.clone()];
 
-                    stdlib::print(&mut self.code_context, data.clone());
+                    abi::push_args(&mut self.code_context, args.as_slice());
+
+                    stdlib::print(&mut self.code_context, data);
 
                     abi::pop_args(&mut self.code_context, args.len());
                 }
                 ast::Literal::Number(n) => {
                     let format = self
                         .symbol_data
-                        .get(&ast::Ident {
-                            value: "__printf_d_arg".to_string(),
-                        })
-                        .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
+                        .get("global::__printf_d_arg")
+                        .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"));
 
                     let args = &[format.clone(), data.clone()];
 
@@ -197,15 +219,17 @@ impl TextBuilder {
         } else {
             let args: Vec<Data> = exprs
                 .iter()
-                .map(|expr| {
-                    let id = match expr {
+                .flat_map(|expr| {
+                    let id: &Ident = match expr {
                         Expression::Ident(id) => id,
                         _ => todo!(),
                     };
-                    self.symbol_data
-                        .get(id)
+                    let data = self
+                        .get_symbol_data(&scope, &id.value)
                         .unwrap_or_else(|| panic!("undefined symbol: {}", id.value))
-                        .clone()
+                        .clone();
+
+                    vec![data]
                 })
                 .collect();
 
@@ -218,17 +242,16 @@ impl TextBuilder {
         }
     }
 
-    fn visit_loop(&mut self, l: &ast::Loop) {
+    fn visit_loop(&mut self, l: &ast::Loop, scope: &str) {
         let counter = self
-            .symbol_data
-            .get(&l.var)
+            .get_symbol_data(scope, &l.var.value)
             .unwrap_or_else(|| panic!("undefined variable: {}", l.var.value))
             .clone();
 
         let offset = self.code_context.get_code_size();
 
         l.body.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt);
+            self.visit_statement(stmt, scope);
         });
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
@@ -289,6 +312,13 @@ impl TextBuilder {
     fn free_stack(&self, size: usize) -> Vec<Mnemonic> {
         vec![ADD.op1(register::RSP).op2(size as u32)]
     }
+
+    fn get_symbol_data(&self, scope: &str, id: &str) -> Option<&Data> {
+        let id = format!("{}::{}", scope, id);
+        // dbg!(&scope, &id);
+
+        self.symbol_data.get(&id)
+    }
 }
 
 fn str_to_u64(s: &str) -> Vec<u64> {
@@ -307,7 +337,7 @@ fn str_to_u64(s: &str) -> Vec<u64> {
 
 fn push_string_on_stack(s: &str) -> (Vec<Mnemonic>, usize) {
     let mut size = 0;
-    let mnemonics = str_to_u64(s)
+    let push_string = str_to_u64(s)
         .iter()
         .fold(vec![], |mut acc: Vec<Mnemonic>, value| {
             acc.push(MOV.op1(register::RAX).op2(*value));
@@ -316,5 +346,10 @@ fn push_string_on_stack(s: &str) -> (Vec<Mnemonic>, usize) {
             acc
         });
 
-    (mnemonics, size)
+    let push_length = vec![
+        MOV.op1(register::RAX).op2(s.len() as u64),
+        PUSH.op1(register::RAX),
+    ];
+    size += 8;
+    ([push_string, push_length].concat(), size)
 }

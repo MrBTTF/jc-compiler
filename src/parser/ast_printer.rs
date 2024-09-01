@@ -30,11 +30,10 @@ impl Visitor<String> for AstPrinter {
             Statement::FuncDefinition(FuncDefinition(name, args, return_type, stmts)) => {
                 let s_name = self.visit_ident(name);
                 let s_args = args.iter().fold(String::new(), |mut acc, a| {
-                    let arg_name = self.visit_ident(&a.0);
-                    let arg_type = self.visit_ident(&a.1);
+                    let arg_name = self.visit_ident(&a.name);
                     acc.push_str(arg_name.as_str());
-                    acc.push_str(": ");
-                    acc.push_str(arg_type.as_str());
+                    acc.push_str(" ");
+                    acc.push_str(&a._type.to_string());
                     acc
                 });
 
@@ -45,7 +44,7 @@ impl Visitor<String> for AstPrinter {
                 }
                 let s_stmts = self.visit_statement_list(stmts).replace("\n", "\n\t");
 
-                format!("func {result} {{\n {s_stmts} \n}}")
+                format!("func {result}{{\n\t{s_stmts} \n}}")
             }
             Statement::Scope(stmts) => {
                 format!("{{\n{}\n}}", self.visit_statement_list(stmts))
@@ -78,7 +77,7 @@ impl Visitor<String> for AstPrinter {
 
     fn visit_literal(&mut self, literal: &Literal) -> String {
         match literal {
-            Literal::String(str) => format!("\"{str}\""),
+            Literal::String(str) => format!(".{str}").replace("\n", "\\n"),
             Literal::Number(number) => self.visit_number(number),
         }
     }

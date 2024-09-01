@@ -27,6 +27,7 @@ fn operator(s: &str) -> (Option<Token>, usize) {
         '{' => (Some(Token::BlockStart), 1),
         '}' => (Some(Token::BlockEnd), 1),
         ':' => (Some(Token::Column), 1),
+        '&' => (Some(Token::Ref), 1),
         _ => (None, 0),
     }
 }

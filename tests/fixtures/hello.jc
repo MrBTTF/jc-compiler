@@ -1,9 +1,5 @@
-func dummy() {
-    return
-}
+func f1(a &String) {
 
-func main() {
-    let a = .Hello World!\n
     print(a)
     const b = .Nummer
     print(b)
@@ -16,5 +12,15 @@ func main() {
     const d = .Qwerty\n
     print(d)
     
+
+  
+    return
+}
+
+
+func main() {
+    let a = .Hello World!\n
+    f1(a)
+
     return
 }

@@ -1,6 +1,9 @@
 pub mod ast_printer;
 
-use std::iter;
+use std::{
+    iter,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::{
     emitter::ast::{self, StatementList},
@@ -107,22 +110,38 @@ fn func_definition(tokens: &[Token]) -> (Option<ast::FuncDefinition>, &[Token]) 
 
     let mut args: Vec<ast::Arg> = vec![];
     let mut tokens = &tokens[3..];
-    for arg in tokens.chunks(2) {
-        if let Token::Ident(arg_name) = &arg[0] {
-            if let Token::Ident(arg_type) = &arg[1] {
-                let arg = ast::Arg(ident(arg_name.as_str()), ident(arg_type.as_str()));
+    while tokens.len() > 2 {
+        let arg = &tokens[0];
+        dbg!(&tokens[1], &tokens[2]);
+        if let Token::Ident(arg_name) = arg {
+            if let Token::Ident(arg_type) = &tokens[1] {
+                let arg_name = ident(arg_name.as_str());
+                let arg_type = arg_type.as_str().into();
+                let arg = ast::Arg::new(arg_name, arg_type);
                 args.push(arg);
                 tokens = &tokens[2..];
+            } else if let Token::Ref = tokens[1] {
+                if let Token::Ident(arg_type) = &tokens[2] {
+                    let arg_name = ident(arg_name.as_str());
+                    let arg_type = arg_type.as_str().into();
+                    let arg = ast::Arg::new(arg_name, ast::Type::Ref(Box::new(arg_type)));
+                    args.push(arg);
+                    tokens = &tokens[3..];
+                }
             }
-        } else if arg[0] == Token::RightP {
+        } else if *arg == Token::RightP {
             break;
         }
     }
 
     let (block, tokens) = block(&tokens[1..]);
 
-    let func_definition =
-        ast::FuncDefinition(func_name.clone(), args, None, StatementList::new(block));
+    let func_definition = ast::FuncDefinition(
+        func_name.clone(),
+        args,
+        None,
+        StatementList::new(func_name.value, block),
+    );
 
     (Some(func_definition), tokens)
 }
@@ -171,6 +190,8 @@ fn control_flow(tokens: &[Token]) -> (Option<ast::ControlFlow>, &[Token]) {
     }
 }
 
+static LOOP_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
 fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {
     if let Token::Ident(id) = &tokens[0] {
         if id != "for" {
@@ -186,13 +207,13 @@ fn _loop(tokens: &[Token]) -> (Option<ast::Loop>, &[Token]) {
     };
 
     let (body, tokens) = block(statements);
-
+    let id = format!("loop_{}", LOOP_COUNTER.fetch_add(1, Ordering::Relaxed));
     (
         Some(ast::Loop {
             var: ast::Ident { value: var },
             start,
             end,
-            body: ast::StatementList::new(body),
+            body: ast::StatementList::new(id, body),
         }),
         tokens,
     )
@@ -239,8 +260,6 @@ fn call(tokens: &[Token]) -> (Option<(ast::Ident, Vec<ast::Expression>)>, &[Toke
         _ => return (None, tokens),
     };
 
-    dbg!(&tokens[3..]);
-
     if &arg_tokens[0] == &Token::RightP {
         return (Some((id, vec![])), &tokens[3..]);
     }
@@ -254,7 +273,7 @@ fn call(tokens: &[Token]) -> (Option<(ast::Ident, Vec<ast::Expression>)>, &[Toke
 pub fn parse(tokens: Vec<Token>) -> StatementList {
     let (statment_list, tokens) = block(&tokens);
     assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
-    StatementList::new(statment_list.into_iter().collect())
+    StatementList::new("global".to_string(), statment_list.into_iter().collect())
 }
 
 fn skip(tokens: &[Token], to_skip: Token) -> &[Token] {

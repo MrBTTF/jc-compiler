@@ -111,7 +111,7 @@ impl SymbolResolver {
 
     pub fn resolve(
         &self,
-        symbol_data: &HashMap<Ident, Data>,
+        symbol_data: &HashMap<String, Data>,
         labels: &BTreeMap<String, usize>,
     ) -> Vec<Symbol> {
         let mut symbols = vec![];
@@ -121,7 +121,7 @@ impl SymbolResolver {
                 continue;
             };
             symbols.push(Symbol::new(
-                id.value.clone(),
+                id.clone(),
                 data.data_loc as usize,
                 Section::Data,
                 SymbolType::Data(DataSymbol::Comptime),

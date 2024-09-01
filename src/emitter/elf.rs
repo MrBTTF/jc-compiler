@@ -29,7 +29,7 @@ use super::{
 pub fn build(
     output_path: PathBuf,
     code_context: &CodeContext,
-    symbol_data: &HashMap<ast::Ident, Data>,
+    symbol_data: &HashMap<String, Data>,
     symbols: &[symbols::Symbol],
     relocations: &[symbols::Relocation],
 ) {

@@ -1,3 +1,5 @@
+use std::mem;
+
 use crate::emitter::elf::sections::DATA_SECTION_ADDRESS_START;
 use crate::emitter::{
     ast::{self, DeclarationType},
@@ -35,12 +37,18 @@ pub const ARG_REGISTERS: &[register::Register] = &[
 ];
 
 pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
-    args.iter().enumerate().for_each(|(i, arg)| {
+    args.iter().enumerate().for_each(|(i, _)| {
         code_context.add(PUSH.op1(ARG_REGISTERS[i]));
-        match arg.decl_type {
+    });
+
+    args.iter()
+        .enumerate()
+        .for_each(|(i, arg)| match arg.decl_type {
             DeclarationType::Let => {
-                code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
-                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
+                if !arg.reference {
+                    code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
+                    code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
+                }
             }
             DeclarationType::Const => {
                 code_context.add(
@@ -49,8 +57,7 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
                         .symbol(arg.symbol.clone()),
                 );
             }
-        }
-    });
+        });
     if args.len() % 2 != 1 {
         code_context.add(SUB.op1(register::RSP).op2(8_u32));
     }
@@ -60,7 +67,7 @@ pub fn pop_args(code_context: &mut CodeContext, args_count: usize) {
     if args_count % 2 != 1 {
         code_context.add(ADD.op1(register::RSP).op2(8_u32));
     }
-    (0..args_count).for_each(|i| {
+    (0..args_count).rev().for_each(|i| {
         code_context.add(POP.op1(ARG_REGISTERS[i]));
     });
 }

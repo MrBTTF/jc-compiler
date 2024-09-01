@@ -10,6 +10,7 @@ pub enum Token {
     Range,
     StatementEnd,
     Column,
+    Ref,
     Ident(String),
     String(String),
     Number(i64),
