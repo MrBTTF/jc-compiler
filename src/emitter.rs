@@ -22,6 +22,7 @@ pub mod elf;
 pub mod exe;
 mod symbols;
 mod text;
+mod stack;
 
 pub fn build_executable(ast: &ast::StatementList, output_path: PathBuf) {
     let mut data_builder = DataBuilder::default();

@@ -12,6 +12,21 @@ use super::{
     Number, StatementList,
 };
 
+#[derive(Clone, Debug)]
+pub enum DataType {
+    String(String),
+    Int(i64),
+}
+
+impl From<ast::Literal> for DataType {
+    fn from(value: ast::Literal) -> Self {
+        match value {
+            Literal::String(s) => DataType::String(s),
+            Literal::Number(i) => DataType::Int(i.value),
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct DataRef {
     pub symbol: String,
@@ -22,7 +37,8 @@ pub struct DataRef {
 #[derive(Clone, Debug)]
 pub struct Data {
     pub symbol: String,
-    pub lit: ast::Literal,
+    pub data_type: DataType,
+    pub data_size: Option<usize>,
     pub reference: bool,
     pub data_loc: u64,
     pub decl_type: ast::DeclarationType,
@@ -31,17 +47,51 @@ pub struct Data {
 impl Data {
     pub fn new(
         symbol: &str,
-        lit: ast::Literal,
+        data_type: DataType,
         reference: bool,
         data_loc: u64,
         assign_type: ast::DeclarationType,
     ) -> Data {
+        let data_size = match &data_type {
+            DataType::String(s) => match assign_type {
+                DeclarationType::Let => Some(s.len() + mem::size_of::<u64>()),
+                DeclarationType::Const => Some(s.len()),
+            },
+            DataType::Int(_) => Some(mem::size_of::<i64>()),
+        };
         Data {
             symbol: symbol.to_string(),
-            lit,
+            data_type,
+            data_size,
             reference,
             data_loc,
             decl_type: assign_type,
+        }
+    }
+
+    pub fn set_data_type(&mut self, data_type: DataType) {
+        self.data_type = data_type;
+
+        let mut data_size = match &self.data_type {
+            DataType::String(s) => s.len() + mem::size_of::<u64>(),
+            DataType::Int(_) => mem::size_of::<i64>(),
+        };
+        let remainder = data_size % 8;
+        if remainder != 0 {
+            data_size += 8 - remainder;
+        }
+        let diff = data_size as i64 - self.data_size.unwrap() as i64;
+        dbg!(self.data_loc, &self.data_type, data_size, self.data_size);
+        self.data_loc = self.data_loc.wrapping_add_signed(diff);
+
+        dbg!(self.data_loc);
+        self.data_size = Some(data_size);
+    }
+
+    pub fn as_vec(&self) -> Vec<u8> {
+        match &self.data_type {
+            DataType::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
+            DataType::Int(i) => i.to_le_bytes().to_vec(),
         }
     }
 }
@@ -56,13 +106,19 @@ pub struct DataBuilder {
 
 impl DataBuilder {
     pub fn visit_ast(&mut self, statement_list: &ast::StatementList) {
-        let lit = Literal::String("%d\0".to_string());
-        let lit_size = lit.len(); //TODO
-        self.data_section.push(lit.len());
+        let number_fmt = "%d\0".to_string();
+        self.data_section.push(number_fmt.len());
+        let data_type = DataType::String(number_fmt);
         let printf_d_arg = "global::__printf_d_arg";
         self.symbol_data.insert(
             printf_d_arg.to_string(),
-            Data::new(&printf_d_arg, lit, false, 0 as u64, DeclarationType::Const),
+            Data::new(
+                &printf_d_arg,
+                data_type,
+                false,
+                0 as u64,
+                DeclarationType::Const,
+            ),
         );
         self.add_to_scope(&statement_list, vec![printf_d_arg.to_string()]);
 
@@ -112,7 +168,13 @@ impl DataBuilder {
                         }
                     };
                     let id = format!("{}::{}", scope, &id.value);
-                    let data = Data::new(&id, lit.clone(), false, data_loc as u64, *assign_type);
+                    let data = Data::new(
+                        &id,
+                        lit.clone().into(),
+                        false,
+                        data_loc as u64,
+                        *assign_type,
+                    );
                     self.symbol_data.insert(id.clone(), data.clone());
                     ids.push(id.clone());
                 }
@@ -138,13 +200,8 @@ impl DataBuilder {
                     };
 
                     let id = format!("{}::{}", f.value, &arg.name.value);
-                    let data = Data::new(
-                        &id,
-                        lit.clone(),
-                        _ref,
-                        data_loc as u64,
-                        DeclarationType::Let,
-                    );
+                    let data =
+                        Data::new(&id, lit.into(), _ref, data_loc as u64, DeclarationType::Let);
                     self.symbol_data.insert(id.clone(), data.clone());
                     ids.push(id.clone());
                 }
@@ -174,7 +231,13 @@ impl DataBuilder {
             self.stack.iter().sum()
         };
         let id = format!("{}::{}", l.body.id, &id.value);
-        let data = Data::new(&id, lit, false, data_loc as u64, ast::DeclarationType::Let);
+        let data = Data::new(
+            &id,
+            lit.into(),
+            false,
+            data_loc as u64,
+            ast::DeclarationType::Let,
+        );
         self.symbol_data.insert(id.clone(), data.clone());
         self.add_to_scope(&l.body, vec![id.clone()]);
     }

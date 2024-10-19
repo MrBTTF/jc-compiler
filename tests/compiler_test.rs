@@ -27,13 +27,12 @@ fn test_assignment() {
     let output = compile_src(&src);
     assert_eq!(
         &output,
-        "Test
-1234
-Value
-"
+        "Value
+33
+Test
+199"
     )
 }
-
 
 #[cfg(target_os = "linux")]
 fn compile_src(src: &str) -> String {

@@ -6,12 +6,12 @@ use std::{
 use elf::section;
 
 use crate::emitter::{
-    ast,
+    ast, data,
     symbols::{DataSymbol, SymbolType},
     text::Sliceable,
 };
 
-use super::{defs, Data, DataRef};
+use super::{defs, Data, DataRef, DataType};
 
 pub type DWord = u64;
 
@@ -359,19 +359,21 @@ pub fn build_data_section(literals: &HashMap<String, Data>) -> Vec<u8> {
         .iter()
         .filter_map(|(id, data)| match data.decl_type {
             ast::DeclarationType::Let => None,
-            ast::DeclarationType::Const => Some((data.data_loc, id.clone(), data.lit.clone())),
+            ast::DeclarationType::Const => {
+                Some((data.data_loc, id.clone(), data.data_type.clone()))
+            }
         })
         .collect();
     literals.sort_by_key(|(data_loc, _, _)| *data_loc);
     literals
         .iter()
         .fold(vec![], |mut acc, (_, _, lit)| match lit {
-            ast::Literal::String(string) => {
+            DataType::String(string) => {
                 acc.extend(string.clone().into_bytes());
                 acc
             }
-            ast::Literal::Number(n) => {
-                acc.extend(n.value.to_le_bytes().to_vec());
+            DataType::Int(n) => {
+                acc.extend(n.to_le_bytes().to_vec());
                 acc
             }
         })

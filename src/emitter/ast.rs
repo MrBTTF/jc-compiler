@@ -136,12 +136,6 @@ impl Literal {
             Literal::Number(n) => mem::size_of_val(&n.value),
         }
     }
-    pub fn as_vec(&self) -> Vec<u8> {
-        match self {
-            Literal::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-            Literal::Number(n) => n.value.to_le_bytes().to_vec(),
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, PartialOrd, Ord)]

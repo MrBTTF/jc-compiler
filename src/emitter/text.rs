@@ -10,7 +10,7 @@ pub use code_context::*;
 
 use super::{
     ast::{self, *},
-    data::{Data, DataBuilder},
+    data::{Data, DataBuilder, DataType},
 };
 use mnemonics::*;
 
@@ -136,11 +136,6 @@ impl TextBuilder {
 
         match expr {
             Expression::Literal(lit) => {
-                let values = match lit {
-                    Literal::String(s) => str_to_u64(s),
-                    Literal::Number(n) => vec![n.value as u64],
-                };
-
                 let mut data = self
                     .get_symbol_data(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value))
@@ -148,23 +143,32 @@ impl TextBuilder {
                 if data.decl_type == DeclarationType::Const {
                     panic!("Cannot assign to const data: {data:#?}");
                 }
-                data.lit = lit.clone();
+                // data.set_data_type(lit.clone().into());
+                let values = match lit {
+                    Literal::String(s) => str_to_u64(&s),
+                    Literal::Number(n) => vec![n.value as u64],
+                };
 
                 let assign_at_stack_location =
-                    values
-                        .iter()
-                        .enumerate()
-                        .fold(vec![], |mut acc: Vec<Mnemonic>, (i, v)| {
-                            acc.push(MOV.op1(register::RAX).op2(*v));
-                            acc.push(PUSH.op1(register::RAX));
-                            acc
-                        });
+                    values.iter().fold(vec![], |mut acc: Vec<Mnemonic>, v| {
+                        acc.push(MOV.op1(register::RAX).op2(*v));
+                        acc.push(PUSH.op1(register::RAX));
+                        acc
+                    });
+
+                let mut data_size = data.data_size.unwrap();
+                let remainder = data_size % 8;
+                if remainder != 0 {
+                    data_size += 8 - remainder;
+                }
 
                 self.code_context.add_slice(&[
                     PUSH.op1(register::RAX),
                     PUSH.op1(register::RBX),
                     MOV.op1(register::RBX).op2(register::RSP),
                     MOV.op1(register::RSP).op2(register::RBP),
+                    SUB.op1(register::RSP).op2(data.data_loc as u32),
+                    ADD.op1(register::RSP).op2(data_size as u32),
                 ]);
                 self.code_context
                     .add_slice(assign_at_stack_location.as_slice());
@@ -182,15 +186,15 @@ impl TextBuilder {
 
     fn visit_call(&mut self, id: &ast::Ident, exprs: &[ast::Expression], scope: &str) {
         if id.value == "print" {
-            let mut data = match exprs.first() {
+            let data = match exprs.first() {
                 Some(ast::Expression::Ident(id)) => self
                     .get_symbol_data(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}::{}", &scope, id.value))
                     .clone(),
                 _ => panic!("Function print expects on argument"),
             };
-            match data.lit {
-                ast::Literal::String(_) => {
+            match data.data_type {
+                DataType::String(_) => {
                     let args = vec![data.clone()];
 
                     abi::push_args(&mut self.code_context, args.as_slice());
@@ -199,7 +203,7 @@ impl TextBuilder {
 
                     abi::pop_args(&mut self.code_context, args.len());
                 }
-                ast::Literal::Number(n) => {
+                DataType::Int(n) => {
                     let format = self
                         .symbol_data
                         .get("global::__printf_d_arg")
@@ -244,14 +248,14 @@ impl TextBuilder {
 
     fn visit_loop(&mut self, l: &ast::Loop, scope: &str) {
         let counter = self
-            .get_symbol_data(scope, &l.var.value)
-            .unwrap_or_else(|| panic!("undefined variable: {}", l.var.value))
+            .get_symbol_data( &l.body.id, &l.var.value)
+            .unwrap_or_else(|| panic!("undefined variable: {}::{}",  l.body.id, l.var.value))
             .clone();
-
+       
         let offset = self.code_context.get_code_size();
 
         l.body.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, scope);
+            self.visit_statement(stmt, &l.body.id);
         });
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
@@ -283,17 +287,17 @@ impl TextBuilder {
                 continue;
             }
             result.extend(match data.decl_type {
-                ast::DeclarationType::Let => match &data.lit {
-                    ast::Literal::String(s) => {
+                ast::DeclarationType::Let => match &data.data_type {
+                    DataType::String(s) => {
                         let (mnemonics, pushed_size) = push_string_on_stack(&s);
                         size += pushed_size;
                         mnemonics
                     }
-                    ast::Literal::Number(n) => {
+                    DataType::Int(i) => {
                         size += 8;
 
                         vec![
-                            MOV.op1(register::RAX).op2(n.value as u64),
+                            MOV.op1(register::RAX).op2(*i as u64),
                             PUSH.op1(register::RAX),
                         ]
                     }
@@ -301,8 +305,8 @@ impl TextBuilder {
                 ast::DeclarationType::Const => vec![],
             });
         }
-
-        if result.len() % 4 != 0 {
+        dbg!(size);
+        if size % 16 != 0 {
             size += 8;
             result.push(SUB.op1(register::RSP).op2(8_u32));
         }

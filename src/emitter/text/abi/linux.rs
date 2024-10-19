@@ -58,13 +58,13 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
                 );
             }
         });
-    if args.len() % 2 != 1 {
+    if args.len() % 2 != 0 {
         code_context.add(SUB.op1(register::RSP).op2(8_u32));
     }
 }
 
 pub fn pop_args(code_context: &mut CodeContext, args_count: usize) {
-    if args_count % 2 != 1 {
+    if args_count % 2 != 0 {
         code_context.add(ADD.op1(register::RSP).op2(8_u32));
     }
     (0..args_count).rev().for_each(|i| {

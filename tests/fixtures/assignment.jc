@@ -1,10 +1,12 @@
 func main() {
-    let info = .Test\n
+    let info = .Value\n
     print(info)
-    info = 1234
+    let num = 33
+    print(num)
+    info = .\nTest\n
     print(info)
-    info = .\nValue\n
-    print(info)
+    num = 199
+    print(num)
 
     return
 }

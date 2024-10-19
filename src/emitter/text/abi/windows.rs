@@ -33,7 +33,7 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
             DeclarationType::Const => {
                 code_context
                     .add(MOV.op1(ARG_REGISTERS[i]).op2(arg.data_loc))
-                    .with_const_data(&arg.symbol, arg.lit.as_vec());
+                    .with_const_data(&arg.symbol, arg.as_vec());
             }
         }
     });
