@@ -29,10 +29,11 @@ string := . ident
 */
 
 fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
-    if tokens.first().unwrap() != &Token::BlockStart {
+    let Some(tokens) = match_next(tokens, Token::BlockStart) else {
         return (vec![], tokens);
-    }
-    let tokens = skip(&tokens[1..], Token::StatementEnd);
+    };
+
+    let tokens = skip(&tokens, Token::StatementEnd);
 
     let mut result = vec![];
     let (mut stmt, mut tokens) = statement(tokens);
@@ -51,7 +52,7 @@ fn block(tokens: &[Token]) -> (Vec<ast::Statement>, &[Token]) {
         }
         (stmt, tokens) = statement(&tokens[1..]);
     }
-    let tokens = &tokens[1..];
+    let tokens = advance(&tokens);
     (result, tokens)
 }
 
@@ -72,70 +73,85 @@ fn statement(tokens: &[Token]) -> (Option<ast::Statement>, &[Token]) {
 }
 
 fn declaration(tokens: &[Token]) -> (Option<ast::Declaration>, &[Token]) {
-    if tokens.len() < 3 {
+    let Some((keyword, tokens)) = match_ident(tokens) else {
         return (None, tokens);
-    }
-    let (assign_type, id) = match &tokens[..3] {
-        [Token::Ident(keyword), Token::Ident(id), Token::Equal]
-            if matches!(keyword.as_str(), "let" | "const") =>
-        {
-            if let Ok(assign_type) = keyword.as_str().try_into() {
-                (assign_type, ident(id))
-            } else {
-                return (None, tokens);
-            }
-        }
-        _ => return (None, tokens),
     };
-    let (expr, tokens) = expression(&tokens[3..]);
-    if let Some(expr) = expr {
-        (Some(ast::Declaration(id, expr, assign_type)), tokens)
-    } else {
-        (None, tokens)
-    }
+    let Ok(assign_type) = keyword.try_into() else {
+        return (None, tokens);
+    };
+
+    let Some((id, tokens)) = match_ident(tokens) else {
+        return (None, tokens);
+    };
+
+    let Some(tokens) = match_next(tokens, Token::Equal) else {
+        return (None, tokens);
+    };
+
+    let (Some(expr), tokens) = expression(&tokens) else {
+        return (None, tokens);
+    };
+
+    (Some(ast::Declaration(ident(id), expr, assign_type)), tokens)
 }
 
 fn func_definition(tokens: &[Token]) -> (Option<ast::FuncDefinition>, &[Token]) {
-    if tokens.len() < 6 {
+    let Some((keyword, tokens)) = match_ident(tokens) else {
+        return (None, tokens);
+    };
+    if keyword != "func" {
         return (None, tokens);
     }
-    let func_name = match &tokens[..3] {
-        [Token::Ident(keyword), Token::Ident(func_name), Token::LeftP]
-            if keyword.as_str() == "func" =>
-        {
-            ident(func_name)
-        }
-        _ => return (None, tokens),
+
+    let Some((func_name, tokens)) = match_ident(tokens) else {
+        return (None, tokens);
+    };
+    let Some(tokens) = match_next(tokens, Token::LeftP) else {
+        return (None, tokens);
     };
 
+    let mut tokens = tokens;
     let mut args: Vec<ast::Arg> = vec![];
-    let mut tokens = &tokens[3..];
-    while tokens.len() > 2 {
-        let arg = &tokens[0];
-        dbg!(&tokens[1], &tokens[2]);
-        if let Token::Ident(arg_name) = arg {
-            if let Token::Ident(arg_type) = &tokens[1] {
-                let arg_name = ident(arg_name.as_str());
-                let arg_type = arg_type.as_str().into();
-                let arg = ast::Arg::new(arg_name, arg_type);
-                args.push(arg);
-                tokens = &tokens[2..];
-            } else if let Token::Ref = tokens[1] {
-                if let Token::Ident(arg_type) = &tokens[2] {
-                    let arg_name = ident(arg_name.as_str());
-                    let arg_type = arg_type.as_str().into();
-                    let arg = ast::Arg::new(arg_name, ast::Type::Ref(Box::new(arg_type)));
-                    args.push(arg);
-                    tokens = &tokens[3..];
-                }
-            }
-        } else if *arg == Token::RightP {
+    loop {
+        dbg!(&tokens[0], &tokens[1], &tokens[2]);
+        if &tokens[0] == &Token::RightP {
+            tokens = advance(tokens);
             break;
-        }
+        };
+        let _tokens = tokens;
+
+        let Some((arg_name, mut _tokens)) = match_ident(_tokens) else {
+            return (None, tokens);
+        };
+
+        let has_ref = if let Some(__tokens) = match_next(_tokens, Token::Ref) {
+            _tokens = __tokens;
+            true
+        } else {
+            false
+        };
+
+        dbg!(&_tokens[0], &_tokens[1], &_tokens[2]);
+        let Some((arg_type, _tokens)) = match_ident(_tokens) else {
+            return (None, tokens);
+        };
+
+        let arg_type = if has_ref {
+            ast::Type::Ref(Box::new(arg_type.into()))
+        } else {
+            arg_type.into()
+        };
+
+        let arg_name = ident(arg_name);
+        let arg = ast::Arg::new(arg_name, arg_type);
+        args.push(arg);
+
+        tokens = _tokens;
     }
 
-    let (block, tokens) = block(&tokens[1..]);
+    let (block, tokens) = block(&tokens);
 
+    let func_name = ident(func_name);
     let func_definition = ast::FuncDefinition(
         func_name.clone(),
         args,
@@ -279,11 +295,32 @@ pub fn parse(tokens: Vec<Token>) -> StatementList {
 fn skip(tokens: &[Token], to_skip: Token) -> &[Token] {
     if let Some(t) = tokens.first() {
         if *t == to_skip {
-            &tokens[1..]
+            advance(&tokens)
         } else {
             tokens
         }
     } else {
         tokens
+    }
+}
+
+fn match_next(tokens: &[Token], target: Token) -> Option<&[Token]> {
+    if tokens.first().unwrap() == &target {
+        return Some(advance(&tokens));
+    }
+    None
+}
+
+
+fn advance(tokens: &[Token]) -> &[Token] {
+    &tokens[1..]
+}
+
+fn match_ident(tokens: &[Token]) -> Option<(&str, &[Token])> {
+    match tokens.first().unwrap() {
+        Token::Ident(v) => {
+            return Some((v, advance(&tokens)));
+        }
+        _ => None,
     }
 }

@@ -79,7 +79,7 @@ impl From<&str> for Type {
         match value {
             "String" => Type::String,
             "Number" => Type::Number,
-            _ => panic!("inlaid type: {}", value),
+            _ => panic!("invalid type: {}", value),
         }
     }
 }
