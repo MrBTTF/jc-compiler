@@ -14,7 +14,7 @@ fn main() {
     let output_filename = Path::new(&env::args().nth(2).unwrap_or("./hello.exe".to_owned())).to_path_buf();
 
     let tokens = lexer::scanner::scan(source_code);
-    let ast = parser::parse(tokens);
+    let ast = parser::parse(tokens).unwrap();
     let output = AstPrinter {}.visit_statement_list(&ast);
     println!("{output}");
 

@@ -129,6 +129,7 @@ pub fn scan(source_code: String) -> Vec<Token> {
         }
         tokens.extend(line_tokens.clone());
         tokens.push(Token::StatementEnd);
+        println!("Token: {:?}", Token::StatementEnd);
     }
     tokens.push(Token::BlockEnd);
     tokens
