@@ -63,12 +63,12 @@ fn statement(tokens: &[Token]) -> Result<(Option<ast::Statement>, &[Token])> {
         Ok((Some(ast::Statement::FuncDefinition(func_def)), tokens))
     } else if let (Some(assgn), tokens) = assignment(tokens).context("Couldn't parse statement")? {
         Ok((Some(ast::Statement::Assignment(assgn)), tokens))
-    } else if let (Some(expr), tokens) = expression(tokens).context("Couldn't parse statement")? {
-        Ok((Some(ast::Statement::Expression(expr)), tokens))
     } else if let (Some(ctrl_flow), tokens) =
         control_flow(tokens).context("Couldn't parse statement")?
     {
         Ok((Some(ast::Statement::ControlFlow(ctrl_flow)), tokens))
+    } else if let (Some(expr), tokens) = expression(tokens).context("Couldn't parse statement")? {
+        Ok((Some(ast::Statement::Expression(expr)), tokens))
     } else {
         bail!("Unexpected statement: {:?}", &tokens[0])
     }
@@ -159,23 +159,24 @@ fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDefinition>, &[T
 }
 
 fn assignment(tokens: &[Token]) -> Result<(Option<ast::Assignment>, &[Token])> {
-    if tokens.len() < 2 {
+    let Ok((id, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
-    }
-    let id = match &tokens[..2] {
-        [Token::Ident(id), Token::Equal] => ident(id),
-        _ => return Ok((None, tokens)),
     };
-    let (expr, tokens) = expression(&tokens[2..])?;
+
+    let Ok(tokens) = match_next(tokens, Token::Equal) else {
+        return Ok((None, tokens));
+    };
+
+    let (expr, tokens) = expression(&tokens)?;
     if let Some(expr) = expr {
-        Ok((Some(ast::Assignment(id, expr)), tokens))
+        Ok((Some(ast::Assignment(ident(id), expr)), tokens))
     } else {
         Ok((None, tokens))
     }
 }
 
 fn expression(tokens: &[Token]) -> Result<(Option<ast::Expression>, &[Token])> {
-    if let (Some((id, exprs)), tokens) = call(tokens) {
+    if let (Some((id, exprs)), tokens) = call(tokens)? {
         return Ok((Some(ast::Expression::Call(id, exprs)), tokens));
     } else if let (Some(l), tokens) = _loop(tokens)? {
         return Ok((Some(ast::Expression::Loop(l)), tokens));
@@ -202,26 +203,25 @@ fn control_flow(tokens: &[Token]) -> Result<(Option<ast::ControlFlow>, &[Token])
 static LOOP_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
-    if let Token::Ident(id) = &tokens[0] {
-        if id != "for" {
-            return Ok((None, tokens));
-        }
-    }
-
-    let (var, start, end, statements) = match &tokens[1..] {
-        [Token::Ident(var), Token::Ident(_), Token::Number(start), Token::Range, Token::Number(end), statements @ ..] => {
-            (var.clone(), *start as u64, *end as u64, statements)
-        }
-        _ => return Ok((None, tokens)),
+    let Ok(tokens) = starts_with_ident(tokens, "for") else {
+        return Ok((None, tokens));
     };
 
-    let (body, tokens) = block(statements)?;
+    let (var, tokens) = match_ident(tokens)?;
+    let tokens = starts_with_ident(tokens, "in")?;
+    let (start, tokens) = match_number(tokens)?;
+    let tokens = match_next(tokens, Token::Range)?;
+    let (end, tokens) = match_number(tokens)?;
+
+    let (body, tokens) = block(tokens)?;
     let id = format!("loop_{}", LOOP_COUNTER.fetch_add(1, Ordering::Relaxed));
     Ok((
         Some(ast::Loop {
-            var: ast::Ident { value: var },
-            start,
-            end,
+            var: ast::Ident {
+                value: var.to_string(),
+            },
+            start: *start as u64,
+            end: *end as u64,
             body: ast::StatementList::new(id, body),
         }),
         tokens,
@@ -230,12 +230,8 @@ fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
 
 fn literal(tokens: &[Token]) -> (Option<ast::Literal>, &[Token]) {
     match tokens {
-        [Token::String(s), Token::StatementEnd, ..] => {
-            (Some(ast::Literal::String(string(s))), &tokens[1..])
-        }
-        [Token::Number(num), Token::StatementEnd, ..] => {
-            (Some(ast::Literal::Number(number(num))), &tokens[1..])
-        }
+        [Token::String(s), ..] => (Some(ast::Literal::String(string(s))), &tokens[1..]),
+        [Token::Number(num), ..] => (Some(ast::Literal::Number(number(num))), &tokens[1..]),
         _ => (None, tokens),
     }
 }
@@ -256,27 +252,25 @@ fn number(number: &i64) -> ast::Number {
     }
 }
 
-fn call(tokens: &[Token]) -> (Option<(ast::Ident, Vec<ast::Expression>)>, &[Token]) {
-    let id: ast::Ident = {
-        let Token::Ident(id) = &tokens[0] else {
-            return (None, tokens);
-        };
-        ident(id)
+fn call(tokens: &[Token]) -> Result<(Option<(ast::Ident, Vec<ast::Expression>)>, &[Token])> {
+    let Ok((id, tokens)) = match_ident(tokens) else {
+        return Ok((None, tokens));
     };
 
-    let arg_tokens = match &tokens[..2] {
-        [Token::Ident(_), Token::LeftP] => &tokens[2..],
-        _ => return (None, tokens),
+    let Ok(tokens) = match_next(tokens, Token::LeftP) else {
+        return Ok((None, tokens));
     };
 
-    if &arg_tokens[0] == &Token::RightP {
-        return (Some((id, vec![])), &tokens[3..]);
+    let id = ident(id);
+    if &tokens[0] == &Token::RightP {
+        return Ok((Some((id, vec![])), &tokens[1..]));
     }
 
-    let (expr, rest_tokens) = expression(arg_tokens).unwrap();
-    assert_eq!(rest_tokens.first().unwrap(), &Token::RightP, "expected )");
+    let (expr, tokens) = expression(tokens).unwrap();
 
-    (expr.map(|expr| (id, vec![expr])), &rest_tokens[1..])
+    let tokens = match_next(tokens, Token::RightP)?;
+
+    Ok((expr.map(|expr| (id, vec![expr])), &tokens))
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<StatementList> {
@@ -324,4 +318,23 @@ fn match_ident(tokens: &[Token]) -> Result<(&str, &[Token])> {
         }
         _ => bail!("Expected ident but found: {:#?}", token),
     }
+}
+
+fn match_number(tokens: &[Token]) -> Result<(&i64, &[Token])> {
+    let token = tokens.first().ok_or(anyhow!("Expected number not found"))?;
+
+    match token {
+        Token::Number(v) => {
+            return Ok((v, advance(&tokens)));
+        }
+        _ => bail!("Expected number but found: {:#?}", token),
+    }
+}
+
+fn starts_with_ident<'a>(tokens: &'a [Token], s: &str) -> Result<&'a [Token]> {
+    let (keyword, tokens) = match_ident(tokens)?;
+    if keyword != s {
+        bail!("Expected ident {s} but found: {:#?}", &tokens[0]);
+    }
+    Ok(&tokens)
 }

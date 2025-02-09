@@ -49,7 +49,7 @@ impl Visitor<String> for AstPrinter {
             Statement::Scope(stmts) => {
                 format!("{{\n{}\n}}", self.visit_statement_list(stmts))
             }
-            Statement::ControlFlow(_) => format!(""),
+            Statement::ControlFlow(cf) => format!("{cf:#?}"),
         }
     }
 
