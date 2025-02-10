@@ -261,16 +261,15 @@ fn call(tokens: &[Token]) -> Result<(Option<(ast::Ident, Vec<ast::Expression>)>,
         return Ok((None, tokens));
     };
 
-    let id = ident(id);
     if &tokens[0] == &Token::RightP {
-        return Ok((Some((id, vec![])), &tokens[1..]));
+        return Ok((Some((ident(id), vec![])), &tokens[1..]));
     }
 
     let (expr, tokens) = expression(tokens).unwrap();
 
     let tokens = match_next(tokens, Token::RightP)?;
 
-    Ok((expr.map(|expr| (id, vec![expr])), &tokens))
+    Ok((expr.map(|expr| (ident(id), vec![expr])), &tokens))
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<StatementList> {

@@ -20,24 +20,23 @@ mod data;
 pub mod elf;
 #[cfg(target_os = "windows")]
 pub mod exe;
+mod stack;
 mod symbols;
 mod text;
-mod stack;
 
 pub fn build_executable(ast: &ast::StatementList, output_path: PathBuf) {
-    let mut data_builder = DataBuilder::default();
-    data_builder.visit_ast(ast);
-    dbg!(&data_builder.symbol_data);
+    let (symbol_data, symbol_scopes) = data::build_symbol_data(ast);
+    dbg!(&symbol_data);
 
-    let code_context = text::build_code_context(ast, &data_builder, IMAGE_BASE);
+    let code_context = text::build_code_context(ast, &symbol_data, &symbol_scopes, IMAGE_BASE);
 
     let symbol_resolver = SymbolResolver::new();
-    let symbols = symbol_resolver.resolve(&data_builder.symbol_data, &code_context.get_labels());
+    let symbols = symbol_resolver.resolve(&symbol_data, &code_context.get_labels());
 
     build(
         output_path,
         &code_context,
-        &data_builder.symbol_data,
+        &symbol_data,
         symbols.as_slice(),
         code_context.get_relocations(),
     );

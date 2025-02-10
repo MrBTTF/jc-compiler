@@ -96,6 +96,14 @@ impl Data {
     }
 }
 
+pub fn build_symbol_data(
+    statement_list: &ast::StatementList,
+) -> (HashMap<String, Data>, HashMap<String, Vec<String>>) {
+    let mut data_builder = DataBuilder::default();
+    data_builder.visit_ast(statement_list);
+    (data_builder.symbol_data, data_builder.scope_symbols)
+}
+
 #[derive(Default, Debug)]
 pub struct DataBuilder {
     pub symbol_data: HashMap<String, Data>,

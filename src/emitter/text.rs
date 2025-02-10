@@ -19,10 +19,11 @@ mod stdlib;
 
 pub fn build_code_context(
     statement_list: &ast::StatementList,
-    data_builder: &DataBuilder,
+    symbol_data: &HashMap<String, Data>,
+    scope_symbols: &HashMap<String, Vec<String>>,
     image_base: u64,
 ) -> CodeContext {
-    let mut text_builder = TextBuilder::new(data_builder, image_base);
+    let mut text_builder = TextBuilder::new(symbol_data, scope_symbols, image_base);
     text_builder.visit_ast(statement_list);
     text_builder.get_code_context()
 }
@@ -34,11 +35,15 @@ pub struct TextBuilder {
 }
 
 impl TextBuilder {
-    pub fn new(data_builder: &DataBuilder, image_base: u64) -> Self {
+    pub fn new(
+        symbol_data: &HashMap<String, Data>,
+        scope_symbols: &HashMap<String, Vec<String>>,
+        image_base: u64,
+    ) -> Self {
         TextBuilder {
             code_context: CodeContext::new(image_base),
-            symbol_data: data_builder.symbol_data.clone(),
-            scope_symbols: data_builder.scope_symbols.clone(),
+            symbol_data: symbol_data.clone(),
+            scope_symbols: scope_symbols.clone(),
         }
     }
 
@@ -248,10 +253,10 @@ impl TextBuilder {
 
     fn visit_loop(&mut self, l: &ast::Loop, scope: &str) {
         let counter = self
-            .get_symbol_data( &l.body.id, &l.var.value)
-            .unwrap_or_else(|| panic!("undefined variable: {}::{}",  l.body.id, l.var.value))
+            .get_symbol_data(&l.body.id, &l.var.value)
+            .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.id, l.var.value))
             .clone();
-       
+
         let offset = self.code_context.get_code_size();
 
         l.body.stmts.iter().for_each(|stmt| {
