@@ -11,6 +11,7 @@ pub use code_context::*;
 use super::{
     ast::{self, *},
     data::{Data, DataBuilder, DataType},
+    stack::StackManager,
 };
 use mnemonics::*;
 
@@ -32,6 +33,7 @@ pub struct TextBuilder {
     code_context: CodeContext,
     symbol_data: HashMap<String, Data>,
     scope_symbols: HashMap<String, Vec<String>>,
+    stack_manager: StackManager,
 }
 
 impl TextBuilder {
@@ -44,6 +46,7 @@ impl TextBuilder {
             code_context: CodeContext::new(image_base),
             symbol_data: symbol_data.clone(),
             scope_symbols: scope_symbols.clone(),
+            stack_manager: StackManager::new(),
         }
     }
 
@@ -52,9 +55,9 @@ impl TextBuilder {
     }
 
     fn visit_ast(&mut self, statement_list: &ast::StatementList) {
+        self.code_context
+            .add_slice(&self.stack_manager.reset_stack());
         self.code_context.add_slice(&[
-            PUSH.op1(register::RBP),
-            MOV.op1(register::RBP).op2(register::RSP),
             SUB.op1(register::RSP).op2(8_u32),
             CALL.op1(Operand::Offset32(0)).symbol("main".to_string()),
             ADD.op1(register::RSP).op2(8_u32),
@@ -97,10 +100,7 @@ impl TextBuilder {
         let ast::FuncDefinition(name, args, return_type, stmt_list) = func_def;
 
         self.code_context.set_label(name.value.clone());
-        self.code_context.add_slice(&[
-            PUSH.op1(register::RBP),
-            MOV.op1(register::RBP).op2(register::RSP),
-        ]);
+        self.code_context.add_slice(&self.stack_manager.reset_stack());
         args.iter()
             .rev()
             .enumerate()
