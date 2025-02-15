@@ -29,7 +29,7 @@ fn test_assignment() {
         &output,
         "Value
 33
-Test
+Some value
 199"
     )
 }

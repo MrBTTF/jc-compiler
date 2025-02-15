@@ -44,7 +44,7 @@ pub fn print(code_context: &mut CodeContext, data: Data) {
         }
         DeclarationType::Const => {
             code_context.add_slice(&[
-                MOV.op1(register::RDX).op2(data.data_size.unwrap() as u64),
+                MOV.op1(register::RDX).op2(data.data_size as u64),
                 MOV.op1(register::RSI).op2(register::RDI),
             ]);
         }

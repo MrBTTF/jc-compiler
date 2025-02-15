@@ -12,7 +12,7 @@ use super::{
     Number, StatementList,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataType {
     String(String),
     Int(i64),
@@ -38,7 +38,7 @@ pub struct DataRef {
 pub struct Data {
     pub symbol: String,
     pub data_type: DataType,
-    pub data_size: Option<usize>,
+    pub data_size: usize,
     pub reference: bool,
     pub data_loc: u64,
     pub decl_type: ast::DeclarationType,
@@ -54,10 +54,10 @@ impl Data {
     ) -> Data {
         let data_size = match &data_type {
             DataType::String(s) => match assign_type {
-                DeclarationType::Let => Some(s.len() + mem::size_of::<u64>()),
-                DeclarationType::Const => Some(s.len()),
+                DeclarationType::Let => s.len() + mem::size_of::<u64>(),
+                DeclarationType::Const => s.len(),
             },
-            DataType::Int(_) => Some(mem::size_of::<i64>()),
+            DataType::Int(_) => mem::size_of::<i64>(),
         };
         Data {
             symbol: symbol.to_string(),
@@ -71,7 +71,6 @@ impl Data {
 
     pub fn set_data_type(&mut self, data_type: DataType) {
         self.data_type = data_type;
-
         let mut data_size = match &self.data_type {
             DataType::String(s) => s.len() + mem::size_of::<u64>(),
             DataType::Int(_) => mem::size_of::<i64>(),
@@ -80,12 +79,12 @@ impl Data {
         if remainder != 0 {
             data_size += 8 - remainder;
         }
-        let diff = data_size as i64 - self.data_size.unwrap() as i64;
+        let diff = data_size as i64 - self.data_size as i64;
         dbg!(self.data_loc, &self.data_type, data_size, self.data_size);
         self.data_loc = self.data_loc.wrapping_add_signed(diff);
 
         dbg!(self.data_loc);
-        self.data_size = Some(data_size);
+        self.data_size = data_size;
     }
 
     pub fn as_vec(&self) -> Vec<u8> {
@@ -128,7 +127,7 @@ impl DataBuilder {
                 DeclarationType::Const,
             ),
         );
-        self.add_to_scope(&statement_list, vec![printf_d_arg.to_string()]);
+        self.add_to_scope(&statement_list.id, vec![printf_d_arg.to_string()]);
 
         self.visit_statement_list(statement_list);
     }
@@ -137,7 +136,7 @@ impl DataBuilder {
         let mut stack = vec![];
         statement_list.stmts.iter().for_each(|stmt| {
             let ids = self.visit_statement(stmt, &mut stack, &statement_list.id);
-            self.add_to_scope(statement_list, ids);
+            self.add_to_scope(&statement_list.id, ids);
         });
     }
 
@@ -150,30 +149,14 @@ impl DataBuilder {
         let mut ids = vec![];
         match statement {
             ast::Statement::Expression(expr) => match expr {
-                ast::Expression::Loop(l) => self.visit_loop(l),
+                ast::Expression::Loop(l) => self.visit_loop(l, stack),
                 _ => (),
             },
             ast::Statement::Declaration(ast::Declaration(id, expr, assign_type)) => match expr {
                 ast::Expression::Literal(lit) => {
                     let data_loc: usize = match assign_type {
-                        DeclarationType::Let => {
-                            let mut data_size = lit.len();
-                            let remainder = data_size % 8;
-                            if remainder != 0 {
-                                data_size += 8 - remainder;
-                            }
-                            stack.push(data_size);
-
-                            if let ast::Literal::String(_) = lit {
-                                stack.push(mem::size_of::<u64>()); // length of string
-                            }
-                            stack.iter().sum()
-                        }
-                        DeclarationType::Const => {
-                            let data_loc = self.data_section.iter().sum();
-                            self.data_section.push(lit.len());
-                            data_loc
-                        }
+                        DeclarationType::Let => get_position_on_stack(stack, lit),
+                        DeclarationType::Const => get_position_on_data(&mut self.data_section, lit),
                     };
                     let id = format!("{}::{}", scope, &id.value);
                     let data = Data::new(
@@ -224,7 +207,8 @@ impl DataBuilder {
     }
 
     // fn visit_declaration(&mut self, statement: &ast::Statement) {}
-    fn visit_loop(&mut self, l: &Loop) {
+    fn visit_loop(&mut self, l: &Loop, stack: &mut Vec<usize>) {
+        let mut stack = vec![];
         let id = &l.var;
         let lit = Literal::Number(ast::Number {
             value: l.start as i64,
@@ -235,8 +219,8 @@ impl DataBuilder {
             if remainder != 0 {
                 data_size += 8 - remainder;
             }
-            self.stack.push(data_size);
-            self.stack.iter().sum()
+            stack.push(data_size);
+            stack.iter().sum()
         };
         let id = format!("{}::{}", l.body.id, &id.value);
         let data = Data::new(
@@ -247,11 +231,11 @@ impl DataBuilder {
             ast::DeclarationType::Let,
         );
         self.symbol_data.insert(id.clone(), data.clone());
-        self.add_to_scope(&l.body, vec![id.clone()]);
+        self.add_to_scope(&l.body.id, vec![id.clone()]);
     }
 
-    fn add_to_scope(&mut self, stmts: &StatementList, ids: Vec<String>) {
-        match self.scope_symbols.entry(stmts.id.clone()) {
+    fn add_to_scope(&mut self, parent: &str, ids: Vec<String>) {
+        match self.scope_symbols.entry(parent.to_string()) {
             Entry::Vacant(v) => {
                 v.insert(ids);
             }
@@ -260,4 +244,24 @@ impl DataBuilder {
             }
         }
     }
+}
+
+fn get_position_on_stack(stack: &mut Vec<usize>, lit: &ast::Literal) -> usize {
+    let mut data_size = lit.len();
+    let remainder = data_size % 8;
+    if remainder != 0 {
+        data_size += 8 - remainder;
+    }
+    stack.push(data_size);
+
+    if let ast::Literal::String(_) = lit {
+        stack.push(mem::size_of::<u64>()); // length of string
+    }
+    stack.iter().sum()
+}
+
+fn get_position_on_data(data_section: &mut Vec<usize>, lit: &ast::Literal) -> usize {
+    let data_loc = data_section.iter().sum();
+    data_section.push(lit.len());
+    data_loc
 }

@@ -3,7 +3,7 @@ func main() {
     print(info)
     let num = 33
     print(num)
-    info = .\nTest\n
+    info = .\nSome value\n
     print(info)
     num = 199
     print(num)

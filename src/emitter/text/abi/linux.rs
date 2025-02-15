@@ -1,6 +1,7 @@
 use std::mem;
 
 use crate::emitter::elf::sections::DATA_SECTION_ADDRESS_START;
+use crate::emitter::stack::StackManager;
 use crate::emitter::{
     ast::{self, DeclarationType},
     data::Data,
@@ -36,9 +37,9 @@ pub const ARG_REGISTERS: &[register::Register] = &[
     register::R9,
 ];
 
-pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
+pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args: &[Data]) {
     args.iter().enumerate().for_each(|(i, _)| {
-        code_context.add(PUSH.op1(ARG_REGISTERS[i]));
+        code_context.add_slice(&stack.push_register(ARG_REGISTERS[i]));
     });
 
     args.iter()
@@ -58,16 +59,10 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
                 );
             }
         });
-    if args.len() % 2 != 0 {
-        code_context.add(SUB.op1(register::RSP).op2(8_u32));
-    }
 }
 
-pub fn pop_args(code_context: &mut CodeContext, args_count: usize) {
-    if args_count % 2 != 0 {
-        code_context.add(ADD.op1(register::RSP).op2(8_u32));
-    }
+pub fn pop_args(code_context: &mut CodeContext, stack: &mut StackManager, args_count: usize) {
     (0..args_count).rev().for_each(|i| {
-        code_context.add(POP.op1(ARG_REGISTERS[i]));
+        code_context.add_slice(&stack.pop_register(ARG_REGISTERS[i]));
     });
 }

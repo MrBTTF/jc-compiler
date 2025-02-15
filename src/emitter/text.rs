@@ -57,25 +57,31 @@ impl TextBuilder {
     fn visit_ast(&mut self, statement_list: &ast::StatementList) {
         self.code_context
             .add_slice(&self.stack_manager.reset_stack());
-        self.code_context.add_slice(&[
-            SUB.op1(register::RSP).op2(8_u32),
-            CALL.op1(Operand::Offset32(0)).symbol("main".to_string()),
-            ADD.op1(register::RSP).op2(8_u32),
-        ]);
+
+        self.code_context
+            .add_slice(&self.stack_manager.align_for_call());
+        self.code_context
+            .add_slice(&[CALL.op1(Operand::Offset32(0)).symbol("main".to_string())]);
+        self.stack_manager.aligned = false;
+        // self.code_context.add_slice(&self.stack_manager.unalign_after_call());
+
         stdlib::exit(&mut self.code_context, 0);
 
         self.visit_statement_list(statement_list);
+
+        // self.code_context
+        //     .add_slice(&self.stack_manager.unalign_after_call());
+        self.code_context.add_slice(&self.stack_manager.drop());
     }
 
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
-        let (mnemonics, size) = self.allocate_stack(&statement_list);
+        let mnemonics = self.allocate_stack(&statement_list);
         self.code_context.add_slice(&mnemonics);
         statement_list.stmts.iter().for_each(|stmt| {
             self.visit_statement(stmt, &statement_list.id);
         });
-        if size != 0 {
-            self.code_context.add_slice(&self.free_stack(size));
-        }
+
+        // self.code_context.add_slice(&self.stack_manager.free());
     }
 
     fn visit_statement(&mut self, statement: &ast::Statement, scope: &str) {
@@ -100,14 +106,17 @@ impl TextBuilder {
         let ast::FuncDefinition(name, args, return_type, stmt_list) = func_def;
 
         self.code_context.set_label(name.value.clone());
-        self.code_context.add_slice(&self.stack_manager.reset_stack());
+        self.code_context
+            .add_slice(&self.stack_manager.init_function_stack());
+
         args.iter()
             .rev()
             .enumerate()
             .for_each(|(i, arg)| match arg._type {
                 ast::Type::Ref(_) => (),
                 _ => {
-                    self.code_context.add(PUSH.op1(abi::ARG_REGISTERS[i]));
+                    self.code_context
+                        .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]));
                 }
             });
 
@@ -118,11 +127,14 @@ impl TextBuilder {
             .for_each(|(i, arg)| match arg._type {
                 ast::Type::Ref(_) => (),
                 _ => {
-                    self.code_context.add(POP.op1(abi::ARG_REGISTERS[i]));
+                    self.code_context
+                        .add_slice(&self.stack_manager.pop_register(abi::ARG_REGISTERS[i]));
                 }
             });
 
-        self.code_context.add(POP.op1(register::RBP));
+        self.code_context
+            .add_slice(&self.stack_manager.drop_function_stack());
+
         self.code_context.add(RET.no_op());
     }
 
@@ -141,47 +153,43 @@ impl TextBuilder {
 
         match expr {
             Expression::Literal(lit) => {
-                let mut data = self
+                let data = self
                     .get_symbol_data(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value))
                     .clone();
                 if data.decl_type == DeclarationType::Const {
                     panic!("Cannot assign to const data: {data:#?}");
                 }
+                let lit_data_type: DataType = lit.clone().into();
+                if std::mem::discriminant(&data.data_type) != std::mem::discriminant(&lit_data_type)
+                {
+                    panic!("Cannot assign {:?} to {:?}", data.data_type, lit_data_type);
+                }
+
                 // data.set_data_type(lit.clone().into());
-                let values = match lit {
-                    Literal::String(s) => str_to_u64(&s),
-                    Literal::Number(n) => vec![n.value as u64],
-                };
 
-                let assign_at_stack_location =
-                    values.iter().fold(vec![], |mut acc: Vec<Mnemonic>, v| {
-                        acc.push(MOV.op1(register::RAX).op2(*v));
-                        acc.push(PUSH.op1(register::RAX));
-                        acc
-                    });
 
-                let mut data_size = data.data_size.unwrap();
+                self.code_context.add_slice(&match lit {
+                    Literal::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
+                    Literal::Number(n) => self.stack_manager.push(n.value as u64),
+                });
+
+                let data_loc = self.stack_manager.get_top(); //32
+
+                let mut data_size = data.data_size;
                 let remainder = data_size % 8;
                 if remainder != 0 {
                     data_size += 8 - remainder;
                 }
 
-                self.code_context.add_slice(&[
-                    PUSH.op1(register::RAX),
-                    PUSH.op1(register::RBX),
-                    MOV.op1(register::RBX).op2(register::RSP),
-                    MOV.op1(register::RSP).op2(register::RBP),
-                    SUB.op1(register::RSP).op2(data.data_loc as u32),
-                    ADD.op1(register::RSP).op2(data_size as u32),
-                ]);
-                self.code_context
-                    .add_slice(assign_at_stack_location.as_slice());
-                self.code_context.add_slice(&[
-                    MOV.op1(register::RSP).op2(register::RBX),
-                    POP.op1(register::RBX),
-                    POP.op1(register::RAX),
-                ]);
+                let data = self
+                    .get_symbol_data_mut(&scope, &id.value)
+                    .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
+                data.data_size = data_size;
+                data.data_loc = data_loc as u64 - 8; // excluding location of RBP
+
+                dbg!(&lit);
+                dbg!(&data);
             }
             Expression::Ident(_) => todo!(),
             Expression::Call(_, _) => todo!(),
@@ -198,15 +206,22 @@ impl TextBuilder {
                     .clone(),
                 _ => panic!("Function print expects on argument"),
             };
+            dbg!(&data);
             match data.data_type {
                 DataType::String(_) => {
                     let args = vec![data.clone()];
+                    dbg!(&self.stack_manager.tops, self.stack_manager.size);
 
-                    abi::push_args(&mut self.code_context, args.as_slice());
+                    abi::push_args(
+                        &mut self.code_context,
+                        &mut self.stack_manager,
+                        args.as_slice(),
+                    );
 
                     stdlib::print(&mut self.code_context, data);
 
-                    abi::pop_args(&mut self.code_context, args.len());
+                    abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
+                    dbg!(&self.stack_manager.tops, self.stack_manager.size);
                 }
                 DataType::Int(n) => {
                     let format = self
@@ -215,12 +230,19 @@ impl TextBuilder {
                         .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"));
 
                     let args = &[format.clone(), data.clone()];
+                    dbg!(&self.stack_manager.tops, self.stack_manager.size);
 
-                    abi::push_args(&mut self.code_context, args);
+                    abi::push_args(&mut self.code_context, &mut self.stack_manager, args);
+
+                    self.code_context
+                        .add_slice(&self.stack_manager.align_for_call());
 
                     stdlib::printd(&mut self.code_context);
 
-                    abi::pop_args(&mut self.code_context, args.len());
+                    self.code_context
+                        .add_slice(&self.stack_manager.unalign_after_call());
+
+                    abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
                 }
             };
 
@@ -242,12 +264,20 @@ impl TextBuilder {
                 })
                 .collect();
 
-            abi::push_args(&mut self.code_context, args.as_slice());
+            abi::push_args(
+                &mut self.code_context,
+                &mut self.stack_manager,
+                args.as_slice(),
+            );
 
             self.code_context
+                .add_slice(&self.stack_manager.align_for_call());
+            self.code_context
                 .add(CALL.op1(Operand::Offset32(0)).symbol(id.value.clone()));
+            self.code_context
+                .add_slice(&self.stack_manager.unalign_after_call());
 
-            abi::pop_args(&mut self.code_context, args.len());
+            abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
         }
     }
 
@@ -256,12 +286,22 @@ impl TextBuilder {
             .get_symbol_data(&l.body.id, &l.var.value)
             .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.id, l.var.value))
             .clone();
+        // self.code_context
+        //     .add_slice(&self.stack_manager.align_local());
+
+        self.code_context
+            .add_slice(&self.stack_manager.reset_stack());
+
+        let statement_list = &l.body;
+
+        let mnemonics = self.allocate_stack(&statement_list);
+        self.code_context.add_slice(&mnemonics);
 
         let offset = self.code_context.get_code_size();
-
-        l.body.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, &l.body.id);
+        statement_list.stmts.iter().for_each(|stmt| {
+            self.visit_statement(stmt, &statement_list.id);
         });
+
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
         self.code_context
@@ -280,46 +320,28 @@ impl TextBuilder {
         dbg!(jump);
         self.code_context
             .add(JL.op1(Operand::Offset32(-(jump as i32))));
+
+        self.code_context.add_slice(&self.stack_manager.drop());
     }
 
-    fn allocate_stack(&self, stmts: &ast::StatementList) -> (Vec<Mnemonic>, usize) {
-        let mut result = vec![];
-        let mut size = 0;
-        let ids = self.scope_symbols.get(&stmts.id).unwrap();
+    fn allocate_stack(&mut self, stmts: &ast::StatementList) -> Vec<Mnemonic> {
+        let ids = self.scope_symbols.get(&stmts.id).unwrap().to_vec();
+
+        let mut code = vec![];
         for id in ids.iter() {
             let data = self.symbol_data.get(id).unwrap();
-            if data.decl_type == ast::DeclarationType::Const {
-                continue;
-            }
-            result.extend(match data.decl_type {
-                ast::DeclarationType::Let => match &data.data_type {
-                    DataType::String(s) => {
-                        let (mnemonics, pushed_size) = push_string_on_stack(&s);
-                        size += pushed_size;
-                        mnemonics
-                    }
-                    DataType::Int(i) => {
-                        size += 8;
 
-                        vec![
-                            MOV.op1(register::RAX).op2(*i as u64),
-                            PUSH.op1(register::RAX),
-                        ]
-                    }
+            code.extend(match data.decl_type {
+                ast::DeclarationType::Let => match &data.data_type {
+                    DataType::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
+                    DataType::Int(i) => self.stack_manager.push(*i as u64),
                 },
                 ast::DeclarationType::Const => vec![],
             });
         }
-        dbg!(size);
-        if size % 16 != 0 {
-            size += 8;
-            result.push(SUB.op1(register::RSP).op2(8_u32));
-        }
-        (result, size)
-    }
-
-    fn free_stack(&self, size: usize) -> Vec<Mnemonic> {
-        vec![ADD.op1(register::RSP).op2(size as u32)]
+        // dbg!(self.stack_manager.get_top());
+        // dbg!(&code);
+        code
     }
 
     fn get_symbol_data(&self, scope: &str, id: &str) -> Option<&Data> {
@@ -327,6 +349,13 @@ impl TextBuilder {
         // dbg!(&scope, &id);
 
         self.symbol_data.get(&id)
+    }
+
+    fn get_symbol_data_mut(&mut self, scope: &str, id: &str) -> Option<&mut Data> {
+        let id = format!("{}::{}", scope, id);
+        // dbg!(&scope, &id);
+
+        self.symbol_data.get_mut(&id)
     }
 }
 
@@ -342,23 +371,4 @@ fn str_to_u64(s: &str) -> Vec<u64> {
             acc.push(value);
             acc
         })
-}
-
-fn push_string_on_stack(s: &str) -> (Vec<Mnemonic>, usize) {
-    let mut size = 0;
-    let push_string = str_to_u64(s)
-        .iter()
-        .fold(vec![], |mut acc: Vec<Mnemonic>, value| {
-            acc.push(MOV.op1(register::RAX).op2(*value));
-            acc.push(PUSH.op1(register::RAX));
-            size += 8;
-            acc
-        });
-
-    let push_length = vec![
-        MOV.op1(register::RAX).op2(s.len() as u64),
-        PUSH.op1(register::RAX),
-    ];
-    size += 8;
-    ([push_string, push_length].concat(), size)
 }
