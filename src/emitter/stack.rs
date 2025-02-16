@@ -4,7 +4,7 @@ use crate::emitter::text::mnemonics::*;
 
 #[derive(Debug, Clone)]
 pub struct StackManager {
-    pub tops: Vec<usize>,
+    pub bottom_pointers: Vec<usize>,
     pub size: usize,
     pub aligned: bool,
 }
@@ -12,63 +12,53 @@ pub struct StackManager {
 impl StackManager {
     pub fn new() -> Self {
         StackManager {
-            tops: vec![],
+            bottom_pointers: vec![],
             size: 0,
             aligned: false,
         }
     }
 
     pub fn init_function_stack(&mut self) -> Vec<Mnemonic> {
-        self.grow(8); //  RBP
-        self.tops.push(0);
-        self.grow(8); //  RBP
-        vec![
-            PUSH.op1(register::RBP),
-            MOV.op1(register::RBP).op2(register::RSP),
-        ]
+        self.grow(8); //  return address
+        self.new_stack()
     }
 
-    pub fn reset_stack(&mut self) -> Vec<Mnemonic> {
-        self.tops.push(0);
-        self.grow(8);
-        vec![
-            PUSH.op1(register::RBP),
-            MOV.op1(register::RBP).op2(register::RSP),
-        ]
+    pub fn new_stack(&mut self) -> Vec<Mnemonic> {
+        let mut code = self.push_register(register::RBP);
+        self.bottom_pointers.push(self.size);
+        code.push(MOV.op1(register::RBP).op2(register::RSP));
+        code
     }
 
     pub fn drop(&mut self) -> Vec<Mnemonic> {
-        self.shrink(8);
         let mut code = if self.get_top() > 0 {
-            vec![ADD.op1(register::RSP).op2(self.get_top() as u32)]
+            let local_size = self.get_top();
+            self.shrink(local_size);
+            vec![ADD.op1(register::RSP).op2(local_size as u32)]
         } else {
             vec![]
         };
 
-        self.tops.pop();
-        code.push(POP.op1(register::RBP));
+        code.extend(self.pop_register(register::RBP));
+        self.bottom_pointers.pop();
         code
     }
 
     pub fn drop_function_stack(&mut self) -> Vec<Mnemonic> {
         let code = self.drop();
-        self.shrink(8);
+        self.shrink(8); // return address
         code
     }
 
     pub fn get_top(&self) -> usize {
-        *self.tops.last().unwrap()
+        self.size - *self.bottom_pointers.last().unwrap()
     }
 
     fn grow(&mut self, v: usize) {
-        let last = self.tops.last_mut().unwrap();
-        *last += v;
         self.size += v;
     }
 
     fn shrink(&mut self, v: usize) {
-        let last = self.tops.last_mut().unwrap();
-        *last -= v;
         self.size -= v;
     }
 
@@ -116,15 +106,6 @@ impl StackManager {
         }
     }
 
-    pub fn align_local(&mut self) -> Vec<Mnemonic> {
-        if self.get_top() % 16 == 0 {
-            self.grow(8);
-            vec![SUB.op1(register::RSP).op2(8_u32)]
-        } else {
-            vec![]
-        }
-    }
-
     pub fn unalign_after_call(&mut self) -> Vec<Mnemonic> {
         // after call the alignment is always % 16 so we need to know if did alignment before
         // or the stack had been already aligned before the call
@@ -147,7 +128,7 @@ impl StackManager {
             vec![]
         };
 
-        self.tops.pop();
+        self.bottom_pointers.pop();
         code
     }
 }

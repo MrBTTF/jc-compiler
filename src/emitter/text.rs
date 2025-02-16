@@ -55,8 +55,7 @@ impl TextBuilder {
     }
 
     fn visit_ast(&mut self, statement_list: &ast::StatementList) {
-        self.code_context
-            .add_slice(&self.stack_manager.reset_stack());
+        self.code_context.add_slice(&self.stack_manager.new_stack());
 
         self.code_context
             .add_slice(&self.stack_manager.align_for_call());
@@ -168,13 +167,12 @@ impl TextBuilder {
 
                 // data.set_data_type(lit.clone().into());
 
-
                 self.code_context.add_slice(&match lit {
                     Literal::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
                     Literal::Number(n) => self.stack_manager.push(n.value as u64),
                 });
 
-                let data_loc = self.stack_manager.get_top(); //32
+                let data_loc = self.stack_manager.get_top();
 
                 let mut data_size = data.data_size;
                 let remainder = data_size % 8;
@@ -186,7 +184,7 @@ impl TextBuilder {
                     .get_symbol_data_mut(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
                 data.data_size = data_size;
-                data.data_loc = data_loc as u64 - 8; // excluding location of RBP
+                data.data_loc = data_loc as u64;
 
                 dbg!(&lit);
                 dbg!(&data);
@@ -210,7 +208,6 @@ impl TextBuilder {
             match data.data_type {
                 DataType::String(_) => {
                     let args = vec![data.clone()];
-                    dbg!(&self.stack_manager.tops, self.stack_manager.size);
 
                     abi::push_args(
                         &mut self.code_context,
@@ -221,7 +218,6 @@ impl TextBuilder {
                     stdlib::print(&mut self.code_context, data);
 
                     abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
-                    dbg!(&self.stack_manager.tops, self.stack_manager.size);
                 }
                 DataType::Int(n) => {
                     let format = self
@@ -230,7 +226,6 @@ impl TextBuilder {
                         .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"));
 
                     let args = &[format.clone(), data.clone()];
-                    dbg!(&self.stack_manager.tops, self.stack_manager.size);
 
                     abi::push_args(&mut self.code_context, &mut self.stack_manager, args);
 
@@ -286,11 +281,8 @@ impl TextBuilder {
             .get_symbol_data(&l.body.id, &l.var.value)
             .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.id, l.var.value))
             .clone();
-        // self.code_context
-        //     .add_slice(&self.stack_manager.align_local());
 
-        self.code_context
-            .add_slice(&self.stack_manager.reset_stack());
+        self.code_context.add_slice(&self.stack_manager.new_stack());
 
         let statement_list = &l.body;
 
