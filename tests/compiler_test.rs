@@ -34,6 +34,30 @@ Some value
     )
 }
 
+#[test]
+fn test_funcs() {
+    let src = "funcs";
+    let output = compile_src(&src);
+    assert_eq!(
+        &output,
+        "before f1
+f1: param
+f1: const
+33
+f1: let
+after f1
+199
+before f2
+f2: param
+f2: const
+f2: let 1
+f3: param
+33
+f2: let 2
+f2: let 3\n"
+    )
+}
+
 #[cfg(target_os = "linux")]
 fn compile_src(src: &str) -> String {
     let dest = env::current_dir()

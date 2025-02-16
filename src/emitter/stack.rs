@@ -1,11 +1,11 @@
-use std::vec;
+use std::{collections::HashMap, vec};
 
 use crate::emitter::text::mnemonics::*;
 
 #[derive(Debug, Clone)]
 pub struct StackManager {
     pub bottom_pointers: Vec<usize>,
-    pub size: usize,
+    tops: Vec<usize>,
     pub aligned: bool,
 }
 
@@ -13,26 +13,27 @@ impl StackManager {
     pub fn new() -> Self {
         StackManager {
             bottom_pointers: vec![],
-            size: 0,
+            tops: vec![0],
             aligned: false,
         }
     }
 
     pub fn init_function_stack(&mut self) -> Vec<Mnemonic> {
+        self.tops.push(0);
         self.grow(8); //  return address
         self.new_stack()
     }
 
     pub fn new_stack(&mut self) -> Vec<Mnemonic> {
         let mut code = self.push_register(register::RBP);
-        self.bottom_pointers.push(self.size);
+        self.bottom_pointers.push(self.get_top());
         code.push(MOV.op1(register::RBP).op2(register::RSP));
         code
     }
 
     pub fn drop(&mut self) -> Vec<Mnemonic> {
-        let mut code = if self.get_top() > 0 {
-            let local_size = self.get_top();
+        let mut code = if self.get_local_top() > 0 {
+            let local_size = self.get_local_top();
             self.shrink(local_size);
             vec![ADD.op1(register::RSP).op2(local_size as u32)]
         } else {
@@ -47,19 +48,28 @@ impl StackManager {
     pub fn drop_function_stack(&mut self) -> Vec<Mnemonic> {
         let code = self.drop();
         self.shrink(8); // return address
+        self.tops.pop();
         code
     }
 
+    pub fn get_local_top(&self) -> usize {
+        self.get_top() - *self.bottom_pointers.last().unwrap()
+    }
+
     pub fn get_top(&self) -> usize {
-        self.size - *self.bottom_pointers.last().unwrap()
+        *self.tops.last().unwrap()
+    }
+
+    pub fn get_top_mut(&mut self) -> &mut usize {
+        self.tops.last_mut().unwrap()
     }
 
     fn grow(&mut self, v: usize) {
-        self.size += v;
+        *self.get_top_mut() += v;
     }
 
     fn shrink(&mut self, v: usize) {
-        self.size -= v;
+        *self.get_top_mut() -= v;
     }
 
     pub fn push_list(&mut self, data: &[u64], size: usize) -> Vec<Mnemonic> {
@@ -97,7 +107,7 @@ impl StackManager {
     }
 
     pub fn align_for_call(&mut self) -> Vec<Mnemonic> {
-        if self.size % 16 != 0 {
+        if self.get_top() % 16 != 0 {
             self.aligned = true;
             self.grow(8);
             vec![SUB.op1(register::RSP).op2(8_u32)]
@@ -119,10 +129,10 @@ impl StackManager {
     }
 
     pub fn free(&mut self) -> Vec<Mnemonic> {
-        let code = if self.get_top() > 0 {
+        let code = if self.get_local_top() > 0 {
             vec![
                 POP.op1(register::RBP),
-                ADD.op1(register::RSP).op2(self.get_top() as u32),
+                ADD.op1(register::RSP).op2(self.get_local_top() as u32),
             ]
         } else {
             vec![]

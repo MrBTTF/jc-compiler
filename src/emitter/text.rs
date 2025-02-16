@@ -57,20 +57,11 @@ impl TextBuilder {
     fn visit_ast(&mut self, statement_list: &ast::StatementList) {
         self.code_context.add_slice(&self.stack_manager.new_stack());
 
-        self.code_context
-            .add_slice(&self.stack_manager.align_for_call());
-        self.code_context
-            .add_slice(&[CALL.op1(Operand::Offset32(0)).symbol("main".to_string())]);
-        self.stack_manager.aligned = false;
-        // self.code_context.add_slice(&self.stack_manager.unalign_after_call());
-
+        let call = self.call("main");
+        self.code_context.add_slice(&call);
         stdlib::exit(&mut self.code_context, 0);
 
         self.visit_statement_list(statement_list);
-
-        // self.code_context
-        //     .add_slice(&self.stack_manager.unalign_after_call());
-        self.code_context.add_slice(&self.stack_manager.drop());
     }
 
     fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
@@ -172,7 +163,7 @@ impl TextBuilder {
                     Literal::Number(n) => self.stack_manager.push(n.value as u64),
                 });
 
-                let data_loc = self.stack_manager.get_top();
+                let data_loc = self.stack_manager.get_local_top();
 
                 let mut data_size = data.data_size;
                 let remainder = data_size % 8;
@@ -265,13 +256,8 @@ impl TextBuilder {
                 args.as_slice(),
             );
 
-            self.code_context
-                .add_slice(&self.stack_manager.align_for_call());
-            self.code_context
-                .add(CALL.op1(Operand::Offset32(0)).symbol(id.value.clone()));
-            self.code_context
-                .add_slice(&self.stack_manager.unalign_after_call());
-
+            let call_code = self.call(&id.value);
+            self.code_context.add_slice(&call_code);
             abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
         }
     }
@@ -348,6 +334,14 @@ impl TextBuilder {
         // dbg!(&scope, &id);
 
         self.symbol_data.get_mut(&id)
+    }
+
+    fn call(&mut self, label: &str) -> Vec<Mnemonic> {
+        let mut code = self.stack_manager.align_for_call();
+        code.push(CALL.op1(Operand::Offset32(0)).symbol(label.to_string()));
+        code.extend(self.stack_manager.unalign_after_call());
+
+        code
     }
 }
 

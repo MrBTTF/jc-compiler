@@ -1,0 +1,55 @@
+func f1(a &String) {
+    print(a)
+    const b = .f1: const\n
+    print(b)
+    let c = 33
+    print(c)
+    let e = .\nf1: let\n
+    print(e)
+  
+    return
+}
+
+
+func main() {
+    let s = .before f1\n
+    print(s)
+
+    let a = .f1: param\n
+    f1(a)
+
+    let b = .after f1\n
+    print(b)
+    const c = 199
+    print(c)
+    const d = .\nbefore f2\n
+    print(d)
+
+    let e = .f2: param\n
+    f2(e)
+
+    return
+}
+
+func f2(a &String) {
+    print(a)
+    const b = .f2: const\n
+    print(b)
+    let d = .f2: let 1\n
+    print(d)
+    let e = .f3: param\n
+    f3(e)
+    let c = 33
+    print(c)
+    d = .\nf2: let 2\n
+    print(d)
+    let d2 = .f2: let 3\n
+    print(d2)
+  
+    return
+}
+
+func f3(a &String) {
+    print(a)
+    return
+}
