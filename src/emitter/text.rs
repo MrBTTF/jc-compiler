@@ -9,7 +9,7 @@ use std::{
 pub use code_context::*;
 
 use super::{
-    ast::{self, *},
+    ast::{self},
     data::{Data, DataBuilder, DataType},
     stack::StackManager,
 };
@@ -19,13 +19,13 @@ mod code_context;
 mod stdlib;
 
 pub fn build_code_context(
-    statement_list: &ast::StatementList,
+    block: &ast::Block,
     symbol_data: &HashMap<String, Data>,
     scope_symbols: &HashMap<String, Vec<String>>,
     image_base: u64,
 ) -> CodeContext {
     let mut text_builder = TextBuilder::new(symbol_data, scope_symbols, image_base);
-    text_builder.visit_ast(statement_list);
+    text_builder.visit_ast(block);
     text_builder.get_code_context()
 }
 
@@ -54,21 +54,21 @@ impl TextBuilder {
         self.code_context.clone()
     }
 
-    fn visit_ast(&mut self, statement_list: &ast::StatementList) {
+    fn visit_ast(&mut self, block: &ast::Block) {
         self.code_context.add_slice(&self.stack_manager.new_stack());
 
         let call = self.call("main");
         self.code_context.add_slice(&call);
         stdlib::exit(&mut self.code_context, 0);
 
-        self.visit_statement_list(statement_list);
+        self.visit_block(block);
     }
 
-    fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
-        let mnemonics = self.allocate_stack(&statement_list);
+    fn visit_block(&mut self, block: &ast::Block) {
+        let mnemonics = self.allocate_stack(&block);
         self.code_context.add_slice(&mnemonics);
-        statement_list.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, &statement_list.id);
+        block.stmts.iter().for_each(|stmt| {
+            self.visit_statement(stmt, &block.id);
         });
 
         // self.code_context.add_slice(&self.stack_manager.free());
@@ -77,50 +77,49 @@ impl TextBuilder {
     fn visit_statement(&mut self, statement: &ast::Statement, scope: &str) {
         // println!("{}: {:#?}", statement_n, &statement);
         match statement {
-            ast::Statement::FuncDefinition(func_def) => {
+            ast::Statement::FuncDeclaration(func_def) => {
                 self.visit_func_definition(func_def);
             }
             ast::Statement::Expression(expr) => {
                 self.visit_expression(expr, scope);
             }
-            ast::Statement::Declaration(_) => (),
+            ast::Statement::VarDeclaration(_) => (),
             ast::Statement::Assignment(assign) => {
                 self.visit_assignment(assign, scope);
             }
-            Statement::Scope(stmts) => (),
-            Statement::ControlFlow(_) => (),
+            ast::Statement::Block(stmts) => (),
+            ast::Statement::Loop(l) => self.visit_loop(l, scope),
+            ast::Statement::ControlFlow(_) => (),
         };
     }
 
-    fn visit_func_definition(&mut self, func_def: &ast::FuncDefinition) {
-        let ast::FuncDefinition(name, args, return_type, stmt_list) = func_def;
+    fn visit_func_definition(&mut self, func_def: &ast::FuncDeclaration) {
+        let ast::FuncDeclaration {
+            name,
+            args,
+            return_type,
+            body: stmt_list,
+        } = func_def;
 
         self.code_context.set_label(name.value.clone());
         self.code_context
             .add_slice(&self.stack_manager.init_function_stack());
 
-        args.iter()
-            .rev()
-            .enumerate()
-            .for_each(|(i, arg)| match arg._type {
-                ast::Type::Ref(_) => (),
-                _ => {
-                    self.code_context
-                        .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]));
-                }
-            });
+        args.iter().rev().enumerate().for_each(|(i, arg)| {
+            if arg._type.modifiers.is_empty() {
+                self.code_context
+                    .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
+            }
+        });
 
-        self.visit_statement_list(stmt_list);
+        self.visit_block(stmt_list);
 
-        args.iter()
-            .enumerate()
-            .for_each(|(i, arg)| match arg._type {
-                ast::Type::Ref(_) => (),
-                _ => {
-                    self.code_context
-                        .add_slice(&self.stack_manager.pop_register(abi::ARG_REGISTERS[i]));
-                }
-            });
+        args.iter().enumerate().for_each(|(i, arg)| {
+            if arg._type.modifiers.is_empty() {
+                self.code_context
+                    .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
+            }
+        });
 
         self.code_context
             .add_slice(&self.stack_manager.drop_function_stack());
@@ -130,24 +129,31 @@ impl TextBuilder {
 
     fn visit_expression(&mut self, expr: &ast::Expression, scope: &str) {
         match expr {
-            ast::Expression::Call(id, exprs) => {
-                self.visit_call(id, exprs, scope);
+            ast::Expression::Call(call) => {
+                self.visit_call(call, scope);
             }
-            ast::Expression::Loop(l) => self.visit_loop(l, scope),
             _ => (),
         }
     }
 
     fn visit_assignment(&mut self, assign: &ast::Assignment, scope: &str) {
-        let ast::Assignment(id, expr) = assign;
+        let ast::Assignment {
+            variable_name: id,
+            rhs: rhs,
+        } = assign;
+
+        let expr = match rhs {
+            ast::RhsExpression::Expression(expr) => expr,
+            ast::RhsExpression::Block(block) => todo!(),
+        };
 
         match expr {
-            Expression::Literal(lit) => {
+            ast::Expression::Literal(lit) => {
                 let data = self
                     .get_symbol_data(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value))
                     .clone();
-                if data.decl_type == DeclarationType::Const {
+                if data.decl_type == ast::VarDeclarationType::Const {
                     panic!("Cannot assign to const data: {data:#?}");
                 }
                 let lit_data_type: DataType = lit.clone().into();
@@ -159,8 +165,10 @@ impl TextBuilder {
                 // data.set_data_type(lit.clone().into());
 
                 self.code_context.add_slice(&match lit {
-                    Literal::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
-                    Literal::Number(n) => self.stack_manager.push(n.value as u64),
+                    ast::Literal::String(s) => {
+                        self.stack_manager.push_list(&str_to_u64(s), s.len())
+                    }
+                    ast::Literal::Integer(n) => self.stack_manager.push(n.value as u64),
                 });
 
                 let data_loc = self.stack_manager.get_local_top();
@@ -180,15 +188,16 @@ impl TextBuilder {
                 dbg!(&lit);
                 dbg!(&data);
             }
-            Expression::Ident(_) => todo!(),
-            Expression::Call(_, _) => todo!(),
-            Expression::Loop(_) => todo!(),
+            ast::Expression::Ident(_) => todo!(),
+            ast::Expression::Call(_) => todo!(),
+            ast::Expression::Unary(unary_operation) => todo!(),
+            ast::Expression::Binary(binary_operation) => todo!(),
         };
     }
 
-    fn visit_call(&mut self, id: &ast::Ident, exprs: &[ast::Expression], scope: &str) {
-        if id.value == "print" {
-            let data = match exprs.first() {
+    fn visit_call(&mut self, call: &ast::Call, scope: &str) {
+        if call.func_name.value == "print" {
+            let data = match call.args.first() {
                 Some(ast::Expression::Ident(id)) => self
                     .get_symbol_data(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}::{}", &scope, id.value))
@@ -234,11 +243,12 @@ impl TextBuilder {
 
             return;
         } else {
-            let args: Vec<Data> = exprs
+            let args: Vec<Data> = call
+                .args
                 .iter()
                 .flat_map(|expr| {
-                    let id: &Ident = match expr {
-                        Expression::Ident(id) => id,
+                    let id: &ast::Ident = match expr {
+                        ast::Expression::Ident(id) => id,
                         _ => todo!(),
                     };
                     let data = self
@@ -256,7 +266,7 @@ impl TextBuilder {
                 args.as_slice(),
             );
 
-            let call_code = self.call(&id.value);
+            let call_code = self.call(&call.func_name.value);
             self.code_context.add_slice(&call_code);
             abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
         }
@@ -270,14 +280,14 @@ impl TextBuilder {
 
         self.code_context.add_slice(&self.stack_manager.new_stack());
 
-        let statement_list = &l.body;
+        let block = &l.body;
 
-        let mnemonics = self.allocate_stack(&statement_list);
+        let mnemonics = self.allocate_stack(&block);
         self.code_context.add_slice(&mnemonics);
 
         let offset = self.code_context.get_code_size();
-        statement_list.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, &statement_list.id);
+        block.stmts.iter().for_each(|stmt| {
+            self.visit_statement(stmt, &block.id);
         });
 
         self.code_context
@@ -302,7 +312,7 @@ impl TextBuilder {
         self.code_context.add_slice(&self.stack_manager.drop());
     }
 
-    fn allocate_stack(&mut self, stmts: &ast::StatementList) -> Vec<Mnemonic> {
+    fn allocate_stack(&mut self, stmts: &ast::Block) -> Vec<Mnemonic> {
         let ids = self.scope_symbols.get(&stmts.id).unwrap().to_vec();
 
         let mut code = vec![];
@@ -310,11 +320,11 @@ impl TextBuilder {
             let data = self.symbol_data.get(id).unwrap();
 
             code.extend(match data.decl_type {
-                ast::DeclarationType::Let => match &data.data_type {
+                ast::VarDeclarationType::Let => match &data.data_type {
                     DataType::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
                     DataType::Int(i) => self.stack_manager.push(*i as u64),
                 },
-                ast::DeclarationType::Const => vec![],
+                ast::VarDeclarationType::Const => vec![],
             });
         }
         // dbg!(self.stack_manager.get_top());

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use super::{data::Data, DeclarationType, Ident};
+use super::{data::Data, VarDeclarationType, Ident};
 
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolType {
@@ -117,7 +117,7 @@ impl SymbolResolver {
         let mut symbols = vec![];
 
         for (id, data) in symbol_data {
-            if let DeclarationType::Let = data.decl_type {
+            if let VarDeclarationType::Let = data.decl_type {
                 continue;
             };
             symbols.push(Symbol::new(

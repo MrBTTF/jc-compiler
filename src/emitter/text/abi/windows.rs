@@ -1,5 +1,5 @@
 use crate::emitter::{
-    ast::{self, DeclarationType},
+    ast::{self, VarDeclarationType},
     data::Data,
 };
 
@@ -14,8 +14,8 @@ pub enum Arg {
 impl From<Data> for Arg {
     fn from(data: Data) -> Self {
         match data.decl_type {
-            ast::DeclarationType::Let => Arg::Stack(data.data_loc as i64),
-            ast::DeclarationType::Const => Arg::Data(data.data_loc as i64),
+            ast::VarDeclarationType::Let => Arg::Stack(data.data_loc as i64),
+            ast::VarDeclarationType::Const => Arg::Data(data.data_loc as i64),
         }
     }
 }
@@ -26,11 +26,11 @@ pub fn push_args(code_context: &mut CodeContext, args: &[Data]) {
     args.iter().enumerate().for_each(|(i, arg)| {
         code_context.add(PUSH.op1(ARG_REGISTERS[i]));
         match arg.decl_type {
-            DeclarationType::Let => {
+            VarDeclarationType::Let => {
                 code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
                 code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
             }
-            DeclarationType::Const => {
+            VarDeclarationType::Const => {
                 code_context
                     .add(MOV.op1(ARG_REGISTERS[i]).op2(arg.data_loc))
                     .with_const_data(&arg.symbol, arg.as_vec());

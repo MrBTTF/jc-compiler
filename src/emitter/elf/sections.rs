@@ -358,8 +358,8 @@ pub fn build_data_section(literals: &HashMap<String, Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
         .filter_map(|(id, data)| match data.decl_type {
-            ast::DeclarationType::Let => None,
-            ast::DeclarationType::Const => {
+            ast::VarDeclarationType::Let => None,
+            ast::VarDeclarationType::Const => {
                 Some((data.data_loc, id.clone(), data.data_type.clone()))
             }
         })

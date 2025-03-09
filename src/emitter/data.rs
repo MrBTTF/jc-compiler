@@ -8,8 +8,8 @@ use std::{
 };
 
 use super::{
-    ast::{self, DeclarationType},
-    Number, StatementList,
+    ast::{self, VarDeclarationType},
+    Block, Integer,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,7 +22,7 @@ impl From<ast::Literal> for DataType {
     fn from(value: ast::Literal) -> Self {
         match value {
             Literal::String(s) => DataType::String(s),
-            Literal::Number(i) => DataType::Int(i.value),
+            Literal::Integer(i) => DataType::Int(i.value),
         }
     }
 }
@@ -41,7 +41,7 @@ pub struct Data {
     pub data_size: usize,
     pub reference: bool,
     pub data_loc: u64,
-    pub decl_type: ast::DeclarationType,
+    pub decl_type: ast::VarDeclarationType,
 }
 
 impl Data {
@@ -50,12 +50,12 @@ impl Data {
         data_type: DataType,
         reference: bool,
         data_loc: u64,
-        assign_type: ast::DeclarationType,
+        assign_type: ast::VarDeclarationType,
     ) -> Data {
         let data_size = match &data_type {
             DataType::String(s) => match assign_type {
-                DeclarationType::Let => s.len() + mem::size_of::<u64>(),
-                DeclarationType::Const => s.len(),
+                VarDeclarationType::Let => s.len() + mem::size_of::<u64>(),
+                VarDeclarationType::Const => s.len(),
             },
             DataType::Int(_) => mem::size_of::<i64>(),
         };
@@ -96,7 +96,7 @@ impl Data {
 }
 
 pub fn build_symbol_data(
-    statement_list: &ast::StatementList,
+    statement_list: &ast::Block,
 ) -> (HashMap<String, Data>, HashMap<String, Vec<String>>) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_ast(statement_list);
@@ -112,7 +112,7 @@ pub struct DataBuilder {
 }
 
 impl DataBuilder {
-    pub fn visit_ast(&mut self, statement_list: &ast::StatementList) {
+    pub fn visit_ast(&mut self, statement_list: &ast::Block) {
         let number_fmt = "%d\0".to_string();
         self.data_section.push(number_fmt.len());
         let data_type = DataType::String(number_fmt);
@@ -124,7 +124,7 @@ impl DataBuilder {
                 data_type,
                 false,
                 0 as u64,
-                DeclarationType::Const,
+                VarDeclarationType::Const,
             ),
         );
         self.add_to_scope(&statement_list.id, vec![printf_d_arg.to_string()]);
@@ -132,7 +132,7 @@ impl DataBuilder {
         self.visit_statement_list(statement_list);
     }
 
-    pub fn visit_statement_list(&mut self, statement_list: &ast::StatementList) {
+    pub fn visit_statement_list(&mut self, statement_list: &ast::Block) {
         let mut stack = vec![];
         statement_list.stmts.iter().for_each(|stmt| {
             let ids = self.visit_statement(stmt, &mut stack, &statement_list.id);
@@ -148,59 +148,77 @@ impl DataBuilder {
     ) -> Vec<String> {
         let mut ids = vec![];
         match statement {
-            ast::Statement::Expression(expr) => match expr {
-                ast::Expression::Loop(l) => self.visit_loop(l, stack),
-                _ => (),
-            },
-            ast::Statement::Declaration(ast::Declaration(id, expr, assign_type)) => match expr {
-                ast::Expression::Literal(lit) => {
-                    let data_loc: usize = match assign_type {
-                        DeclarationType::Let => get_position_on_stack(stack, lit),
-                        DeclarationType::Const => get_position_on_data(&mut self.data_section, lit),
-                    };
-                    let id = format!("{}::{}", scope, &id.value);
-                    let data = Data::new(
-                        &id,
-                        lit.clone().into(),
-                        false,
-                        data_loc as u64,
-                        *assign_type,
-                    );
-                    self.symbol_data.insert(id.clone(), data.clone());
-                    ids.push(id.clone());
+            ast::Statement::Expression(expression) => (),
+            ast::Statement::Loop(l) => self.visit_loop(l, stack),
+            ast::Statement::VarDeclaration(ast::VarDeclaration {
+                name: id,
+                rhs: rhs,
+                declarion_type: assign_type,
+            }) => {
+                let expr = match rhs {
+                    ast::RhsExpression::Expression(expr) => expr,
+                    ast::RhsExpression::Block(block) => todo!(),
+                };
+
+                match expr {
+                    ast::Expression::Literal(lit) => {
+                        let data_loc: usize = match assign_type {
+                            VarDeclarationType::Let => get_position_on_stack(stack, lit),
+                            VarDeclarationType::Const => {
+                                get_position_on_data(&mut self.data_section, lit)
+                            }
+                        };
+                        let id = format!("{}::{}", scope, &id.value);
+                        let data = Data::new(
+                            &id,
+                            lit.clone().into(),
+                            false,
+                            data_loc as u64,
+                            *assign_type,
+                        );
+                        self.symbol_data.insert(id.clone(), data.clone());
+                        ids.push(id.clone());
+                    }
+                    _ => todo!(),
                 }
-                _ => todo!(),
-            },
-            ast::Statement::FuncDefinition(ast::FuncDefinition(f, args, _, stmt_list)) => {
+            }
+            ast::Statement::FuncDeclaration(ast::FuncDeclaration {
+                name: f,
+                args,
+                return_type: _,
+                body: stmt_list,
+            }) => {
                 for arg in args {
                     let data_loc: usize = {
                         stack.push(mem::size_of::<u64>());
                         stack.iter().sum()
                     };
-                    let (lit, _ref) = match &arg._type {
-                        ast::Type::String => (Literal::String("".to_string()), false),
-                        ast::Type::Number => (Literal::Number(Number { value: 0 }), false),
-                        ast::Type::Ref(t) => (
-                            match **t {
-                                ast::Type::String => Literal::String("".to_string()),
-                                ast::Type::Number => Literal::Number(Number { value: 0 }),
-                                ast::Type::Ref(_) => todo!(),
-                            },
-                            true,
-                        ),
+
+                    let has_ref = !arg._type.modifiers.is_empty();
+                    let lit = match arg._type.name {
+                        ast::TypeName::String => Literal::String("".to_string()),
+                        ast::TypeName::Int => Literal::Integer(Integer { value: 0 }),
+                        ast::TypeName::Float => todo!(),
+                        ast::TypeName::Bool => todo!(),
+                        ast::TypeName::Unit => todo!(),
                     };
 
                     let id = format!("{}::{}", f.value, &arg.name.value);
-                    let data =
-                        Data::new(&id, lit.into(), _ref, data_loc as u64, DeclarationType::Let);
+                    let data = Data::new(
+                        &id,
+                        lit.into(),
+                        has_ref,
+                        data_loc as u64,
+                        VarDeclarationType::Let,
+                    );
                     self.symbol_data.insert(id.clone(), data.clone());
                     ids.push(id.clone());
                 }
                 dbg!(&stack);
                 self.visit_statement_list(stmt_list)
             }
-            ast::Statement::Scope(stmt_list) => self.visit_statement_list(stmt_list),
-            ast::Statement::Assignment(ast::Assignment(_id, _expr)) => (),
+            ast::Statement::Block(stmt_list) => self.visit_statement_list(stmt_list),
+            ast::Statement::Assignment(_) => (),
             ast::Statement::ControlFlow(_) => (),
         }
         ids
@@ -210,7 +228,7 @@ impl DataBuilder {
     fn visit_loop(&mut self, l: &Loop, stack: &mut Vec<usize>) {
         let mut stack = vec![];
         let id = &l.var;
-        let lit = Literal::Number(ast::Number {
+        let lit = Literal::Integer(ast::Integer {
             value: l.start as i64,
         });
         let data_loc: usize = {
@@ -228,7 +246,7 @@ impl DataBuilder {
             lit.into(),
             false,
             data_loc as u64,
-            ast::DeclarationType::Let,
+            ast::VarDeclarationType::Let,
         );
         self.symbol_data.insert(id.clone(), data.clone());
         self.add_to_scope(&l.body.id, vec![id.clone()]);

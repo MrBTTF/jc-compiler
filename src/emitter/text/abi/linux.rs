@@ -3,7 +3,7 @@ use std::mem;
 use crate::emitter::elf::sections::DATA_SECTION_ADDRESS_START;
 use crate::emitter::stack::StackManager;
 use crate::emitter::{
-    ast::{self, DeclarationType},
+    ast::{self, VarDeclarationType},
     data::Data,
 };
 
@@ -23,8 +23,8 @@ pub enum Arg {
 impl From<Data> for Arg {
     fn from(data: Data) -> Self {
         match data.decl_type {
-            ast::DeclarationType::Let => Arg::Stack(data.data_loc as i64),
-            ast::DeclarationType::Const => Arg::Data(data.data_loc as i64),
+            ast::VarDeclarationType::Let => Arg::Stack(data.data_loc as i64),
+            ast::VarDeclarationType::Const => Arg::Data(data.data_loc as i64),
         }
     }
 }
@@ -45,13 +45,13 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
     args.iter()
         .enumerate()
         .for_each(|(i, arg)| match arg.decl_type {
-            DeclarationType::Let => {
+            VarDeclarationType::Let => {
                 if !arg.reference {
                     code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
                     code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
                 }
             }
-            DeclarationType::Const => {
+            VarDeclarationType::Const => {
                 code_context.add(
                     MOV.op1(ARG_REGISTERS[i])
                         .op2(0_u64)

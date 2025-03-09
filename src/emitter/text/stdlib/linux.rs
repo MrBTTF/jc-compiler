@@ -3,7 +3,7 @@ use std::mem;
 use crate::emitter::{
     data::*,
     text::{abi::linux::*, mnemonics::*, CodeContext},
-    DeclarationType,
+    VarDeclarationType,
 };
 
 // pub fn print(code_context: &mut CodeContext, data: Data) {
@@ -33,7 +33,7 @@ use crate::emitter::{
 
 pub fn print(code_context: &mut CodeContext, data: Data) {
     match data.decl_type {
-        DeclarationType::Let => {
+        VarDeclarationType::Let => {
             code_context.add_slice(&[
                 MOV.op1(register::RDX)
                     .op2(register::RDI)
@@ -42,7 +42,7 @@ pub fn print(code_context: &mut CodeContext, data: Data) {
                 MOV.op1(register::RSI).op2(register::RDI),
             ]);
         }
-        DeclarationType::Const => {
+        VarDeclarationType::Const => {
             code_context.add_slice(&[
                 MOV.op1(register::RDX).op2(data.data_size as u64),
                 MOV.op1(register::RSI).op2(register::RDI),

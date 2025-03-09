@@ -6,90 +6,77 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub struct StatementList {
-    pub id: String,
-    pub stmts: Vec<Statement>,
-}
-
-impl StatementList {
-    pub fn new(id: String, stmts: Vec<Statement>) -> Self {
-        Self { id, stmts }
-    }
+pub struct Program {
+    pub items: Vec<Item>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Expression(Expression),
-    Declaration(Declaration),
-    Assignment(Assignment),
-    FuncDefinition(FuncDefinition),
-    Scope(StatementList),
-    ControlFlow(ControlFlow),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DeclarationType {
-    Let,
-    Const,
-}
-impl Display for DeclarationType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DeclarationType::Let => write!(f, "let"),
-            DeclarationType::Const => write!(f, "const"),
-        }
-    }
-}
-
-impl TryFrom<&str> for DeclarationType {
-    type Error = String;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        if s == "let" {
-            Ok(DeclarationType::Let)
-        } else if s == "const" {
-            Ok(DeclarationType::Const)
-        } else {
-            Err(format!("invalid assignemnt type: {s}"))
-        }
-    }
+pub enum Item {
+    FuncDeclaration,
+    VarDeclaration,
 }
 
 #[derive(Debug, Clone)]
-
-pub struct Declaration(pub Ident, pub Expression, pub DeclarationType);
-
-#[derive(Debug, Clone)]
-pub struct FuncDefinition(
-    pub Ident,
-    pub Vec<Arg>,
-    pub Option<Ident>,
-    pub StatementList,
-);
-
-#[derive(Debug, Clone)]
-pub enum Type {
-    String,
-    Number,
-    Ref(Box<Type>),
+pub struct Type {
+    pub name: TypeName,
+    pub modifiers: Vec<TypeModifer>,
 }
-
-impl From<&str> for Type {
-    fn from(value: &str) -> Self {
-        match value {
-            "String" => Type::String,
-            "Number" => Type::Number,
-            _ => panic!("invalid type: {}", value),
-        }
+impl Type {
+    pub fn new(name: TypeName, modifiers: Vec<TypeModifer>) -> Self {
+        Self { name, modifiers }
     }
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let modifiers = self.modifiers.iter().fold(String::new(), |mut s, m| {
+            s += &format!("{m}");
+            s
+        });
+        f.write_fmt(format_args!("{} {}", modifiers, self.name))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeModifer {
+    Ref,
+}
+
+impl Display for TypeModifer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::String => f.write_str("String"),
-            Type::Number => f.write_str("Number"),
-            Type::Ref(t) => f.write_fmt(format_args!("&{}", t)),
+            TypeModifer::Ref => f.write_str("&"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeName {
+    String,
+    Int,
+    Float,
+    Bool,
+    Unit,
+}
+
+impl Display for TypeName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeName::String => f.write_str("String"),
+            TypeName::Int => f.write_str("int"),
+            TypeName::Float => f.write_str("float"),
+            TypeName::Bool => f.write_str("bool"),
+            TypeName::Unit => f.write_str(""),
+        }
+    }
+}
+
+impl From<&str> for TypeName {
+    fn from(value: &str) -> Self {
+        match value {
+            "String" => TypeName::String,
+            "int" => TypeName::Int,
+            _ => panic!("invalid type: {}", value),
         }
     }
 }
@@ -107,33 +94,158 @@ impl Arg {
 }
 
 #[derive(Debug, Clone)]
-
-pub struct Assignment(pub Ident, pub Expression);
+pub struct FuncDeclaration {
+    pub name: Ident,
+    pub args: Vec<Arg>,
+    pub return_type: Type,
+    pub body: Block,
+}
+impl FuncDeclaration {
+    pub fn new(name: Ident, args: Vec<Arg>, return_type: Type, body: Block) -> Self {
+        Self {
+            name,
+            args,
+            return_type,
+            body,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
-pub enum Expression {
-    Ident(Ident),
-    Literal(Literal),
-    Call(Ident, Vec<Expression>),
-    Loop(Loop),
+pub struct Block {
+    pub id: String,
+    pub stmts: Vec<Statement>,
+}
+
+impl Block {
+    pub fn new(id: String, stmts: Vec<Statement>) -> Self {
+        Self { id, stmts }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum ControlFlow {
-    Return,
+    Return(Option<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Statement {
+    VarDeclaration(VarDeclaration),
+    FuncDeclaration(FuncDeclaration),
+    Loop(Loop),
+    Assignment(Assignment),
+    Expression(Expression),
+    ControlFlow(ControlFlow),
+    Block(Block),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VarDeclarationType {
+    Let,
+    Const,
+}
+impl Display for VarDeclarationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VarDeclarationType::Let => write!(f, "let"),
+            VarDeclarationType::Const => write!(f, "const"),
+        }
+    }
+}
+
+impl TryFrom<&str> for VarDeclarationType {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        if s == "let" {
+            Ok(VarDeclarationType::Let)
+        } else if s == "const" {
+            Ok(VarDeclarationType::Const)
+        } else {
+            Err(format!("invalid assignemnt type: {s}"))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+
+pub struct VarDeclaration {
+    pub name: Ident,
+    pub rhs: RhsExpression,
+    pub declarion_type: VarDeclarationType,
+}
+impl VarDeclaration {
+    pub fn new(id: Ident, expr: RhsExpression, decl_type: VarDeclarationType) -> Self {
+        Self {
+            name: id,
+            rhs: expr,
+            declarion_type: decl_type,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RhsExpression {
+    Expression(Expression),
+    Block(Block),
+}
+
+#[derive(Debug, Clone)]
+
+pub struct Assignment {
+    pub variable_name: Ident,
+    pub rhs: RhsExpression,
+}
+impl Assignment {
+    pub fn new(variable_name: Ident, rhs: RhsExpression) -> Self {
+        Self { variable_name, rhs }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Expression {
+    Unary(UnaryOperation),
+    Binary(BinaryOperation),
+    Ident(Ident),
+    Literal(Literal),
+    Call(Call),
+}
+
+#[derive(Debug, Clone)]
+pub enum UnaryOperation {
+    Minus(Box<Expression>),
+    Not(Box<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub enum BinaryOperation {
+    Plus(Box<Expression>, Box<Expression>),
+    Minus(Box<Expression>, Box<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Call {
+    pub func_name: Ident,
+    pub args: Vec<Expression>,
+}
+impl Call {
+    pub(crate) fn new(func_name: Ident, args: Vec<Expression>) -> Self {
+        Self { func_name, args }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Literal {
     String(String),
-    Number(Number),
+    Integer(Integer),
+    // Bool(Bool),
 }
 
 impl Literal {
     pub fn len(&self) -> usize {
         match self {
             Literal::String(s) => s.len(),
-            Literal::Number(n) => mem::size_of_val(&n.value),
+            Literal::Integer(n) => mem::size_of_val(&n.value),
         }
     }
 }
@@ -144,7 +256,7 @@ pub struct Ident {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Number {
+pub struct Integer {
     pub value: i64,
 }
 
@@ -153,14 +265,5 @@ pub struct Loop {
     pub var: Ident,
     pub start: u64,
     pub end: u64,
-    pub body: StatementList,
-}
-
-pub trait Visitor<T> {
-    fn visit_statement_list(&mut self, n: &StatementList) -> T;
-    fn visit_statement(&mut self, s: &Statement) -> T;
-    fn visit_expression(&mut self, s: &Expression) -> T;
-    fn visit_literal(&mut self, e: &Literal) -> T;
-    fn visit_ident(&mut self, e: &Ident) -> T;
-    fn visit_number(&mut self, e: &Number) -> T;
+    pub body: Block,
 }

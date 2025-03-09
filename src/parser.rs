@@ -4,27 +4,38 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::{
-    emitter::ast::{self, StatementList},
-    lexer::token::Token,
-};
+use crate::{emitter::ast, lexer::token::Token};
 
 /*
-func_or_global := func ident (args) block | global
-args := (ident: ident,)*
-block := { statement_list  }
-statement_list := statement*
-statement := declaration | assignment | expression | func_definition | control_flow
-declaration := ("let" | "const") ident "=" expression
-assignment := ident "=" expression
-expression := literal | ident | call | loop
-control_flow := return
-func_definition := func ident (args) ident block
-args := (ident: ident,)*
+program := item*
+item := func | declaration
+func_declaration := "func" ident (args) type block
+args := (arg,)*
+arg := "const"? ident: type
+type := &* type_name
+type_name := ("String" | "int" | "float" | "bool" | unit)
+block := { statement*  }
+statement := var_declaration | assignment | expression
+                        | func_declaration | loop | control_flow | block
 loop := "for" ident..ident block
-call := ident(expression)
-literal := string | number
+
+var_declaration := ("let" | "const") ident [: type] "=" rhs_expression
+assignment := ident "=" rhs_expression
+
+rhs_expression := block | expression
+expression := unary | binary | literal | ident | call
+unary := unary_operator expression
+binary := expression binary_operator expression
+unary_operator := - | !
+operator :=  + | - | * | /
+
+call := ident(expression(, expression)+)
+literal := string | int | float | bool
+bool := "true" | "false"
 string := . ident
+
+control_flow := return_cf
+return_cf := "return" expression
 */
 
 fn block(tokens: &[Token]) -> Result<(Vec<ast::Statement>, &[Token])> {
@@ -55,30 +66,38 @@ fn block(tokens: &[Token]) -> Result<(Vec<ast::Statement>, &[Token])> {
 }
 
 fn statement(tokens: &[Token]) -> Result<(Option<ast::Statement>, &[Token])> {
-    if let (Some(decl), tokens) = declaration(tokens).context("Couldn't parse statement")? {
-        Ok((Some(ast::Statement::Declaration(decl)), tokens))
+    if let (Some(decl), tokens) =
+        var_declaration(tokens).context("Couldn't parse var_declaration statement")?
+    {
+        Ok((Some(ast::Statement::VarDeclaration(decl)), tokens))
     } else if let (Some(func_def), tokens) =
         func_definition(tokens).context("Couldn't parse statement")?
     {
-        Ok((Some(ast::Statement::FuncDefinition(func_def)), tokens))
-    } else if let (Some(assgn), tokens) = assignment(tokens).context("Couldn't parse statement")? {
+        Ok((Some(ast::Statement::FuncDeclaration(func_def)), tokens))
+    } else if let (Some(assgn), tokens) =
+        assignment(tokens).context("Couldn't parse assignment statement")?
+    {
         Ok((Some(ast::Statement::Assignment(assgn)), tokens))
+    } else if let (Some(l), tokens) = _loop(tokens)? {
+        return Ok((Some(ast::Statement::Loop(l)), tokens));
     } else if let (Some(ctrl_flow), tokens) =
         control_flow(tokens).context("Couldn't parse statement")?
     {
         Ok((Some(ast::Statement::ControlFlow(ctrl_flow)), tokens))
-    } else if let (Some(expr), tokens) = expression(tokens).context("Couldn't parse statement")? {
+    } else if let (Some(expr), tokens) =
+        expression(tokens).context("Couldn't parse expression statement")?
+    {
         Ok((Some(ast::Statement::Expression(expr)), tokens))
     } else {
         bail!("Unexpected statement: {:?}", &tokens[0])
     }
 }
 
-fn declaration(tokens: &[Token]) -> Result<(Option<ast::Declaration>, &[Token])> {
+fn var_declaration(tokens: &[Token]) -> Result<(Option<ast::VarDeclaration>, &[Token])> {
     let Ok((keyword, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
-    let Ok(assign_type) = keyword.try_into() else {
+    let Ok(decl_type) = keyword.try_into() else {
         return Ok((None, tokens));
     };
 
@@ -92,10 +111,17 @@ fn declaration(tokens: &[Token]) -> Result<(Option<ast::Declaration>, &[Token])>
         return Ok((None, tokens));
     };
 
-    Ok((Some(ast::Declaration(ident(id), expr, assign_type)), tokens))
+    Ok((
+        Some(ast::VarDeclaration::new(
+            ident(id),
+            ast::RhsExpression::Expression(expr),
+            decl_type,
+        )),
+        tokens,
+    ))
 }
 
-fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDefinition>, &[Token])> {
+fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDeclaration>, &[Token])> {
     let Ok((keyword, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -132,11 +158,12 @@ fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDefinition>, &[T
         let (arg_type, _tokens) = match_ident(_tokens)
             .context(format!("Expected argument type, found: {:#?}", &tokens[0]))?;
 
-        let arg_type = if has_ref {
-            ast::Type::Ref(Box::new(arg_type.into()))
+        let type_modifiers = if has_ref {
+            vec![ast::TypeModifer::Ref]
         } else {
-            arg_type.into()
+            vec![]
         };
+        let arg_type = ast::Type::new(arg_type.into(), type_modifiers);
 
         let arg_name = ident(arg_name);
         let arg = ast::Arg::new(arg_name, arg_type);
@@ -148,11 +175,12 @@ fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDefinition>, &[T
     let (block, tokens) = block(&tokens)?;
 
     let func_name = ident(func_name);
-    let func_definition = ast::FuncDefinition(
+    let return_type = ast::Type::new(ast::TypeName::Unit, vec![]);
+    let func_definition = ast::FuncDeclaration::new(
         func_name.clone(),
         args,
-        None,
-        StatementList::new(func_name.value, block),
+        return_type,
+        ast::Block::new(func_name.value, block),
     );
 
     Ok((Some(func_definition), tokens))
@@ -167,19 +195,26 @@ fn assignment(tokens: &[Token]) -> Result<(Option<ast::Assignment>, &[Token])> {
         return Ok((None, tokens));
     };
 
-    let (expr, tokens) = expression(&tokens)?;
-    if let Some(expr) = expr {
-        Ok((Some(ast::Assignment(ident(id), expr)), tokens))
+    let (rhs_expr, tokens) = rhs_expression(&tokens)?;
+    if let Some(rhs_expr) = rhs_expr {
+        Ok((Some(ast::Assignment::new(ident(id), rhs_expr)), tokens))
     } else {
         Ok((None, tokens))
     }
 }
 
+fn rhs_expression(tokens: &[Token]) -> Result<(Option<ast::RhsExpression>, &[Token])> {
+     if let (Some(expr), tokens) = expression(tokens)? {
+        return Ok((Some(ast::RhsExpression::Expression(expr)), tokens));
+    } if let (block, tokens) = block(tokens)? {
+        return todo!(); //Ok((Some(ast::RhsExpression::Block(Block::new(id, stmts))), tokens));
+    } 
+    bail!("invalid rhs expression: {:?}", &tokens)
+}
+
 fn expression(tokens: &[Token]) -> Result<(Option<ast::Expression>, &[Token])> {
-    if let (Some((id, exprs)), tokens) = call(tokens)? {
-        return Ok((Some(ast::Expression::Call(id, exprs)), tokens));
-    } else if let (Some(l), tokens) = _loop(tokens)? {
-        return Ok((Some(ast::Expression::Loop(l)), tokens));
+    if let (Some(call), tokens) = call(tokens)? {
+        return Ok((Some(ast::Expression::Call(call)), tokens));
     } else if let (Some(literal), tokens) = literal(tokens) {
         return Ok((Some(ast::Expression::Literal(literal)), tokens));
     } else if let [Token::Ident(id), ..] = tokens {
@@ -194,7 +229,7 @@ fn control_flow(tokens: &[Token]) -> Result<(Option<ast::ControlFlow>, &[Token])
     };
 
     if keyword == "return" {
-        Ok((Some(ast::ControlFlow::Return), &tokens))
+        Ok((Some(ast::ControlFlow::Return(None)), &tokens))
     } else {
         Ok((None, tokens))
     }
@@ -222,7 +257,7 @@ fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
             },
             start: *start as u64,
             end: *end as u64,
-            body: ast::StatementList::new(id, body),
+            body: ast::Block::new(id, body),
         }),
         tokens,
     ))
@@ -231,7 +266,7 @@ fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
 fn literal(tokens: &[Token]) -> (Option<ast::Literal>, &[Token]) {
     match tokens {
         [Token::String(s), ..] => (Some(ast::Literal::String(string(s))), &tokens[1..]),
-        [Token::Number(num), ..] => (Some(ast::Literal::Number(number(num))), &tokens[1..]),
+        [Token::Number(num), ..] => (Some(ast::Literal::Integer(number(num))), &tokens[1..]),
         _ => (None, tokens),
     }
 }
@@ -246,13 +281,13 @@ fn ident(ident: &str) -> ast::Ident {
     }
 }
 
-fn number(number: &i64) -> ast::Number {
-    ast::Number {
+fn number(number: &i64) -> ast::Integer {
+    ast::Integer {
         value: number.to_owned(),
     }
 }
 
-fn call(tokens: &[Token]) -> Result<(Option<(ast::Ident, Vec<ast::Expression>)>, &[Token])> {
+fn call(tokens: &[Token]) -> Result<(Option<ast::Call>, &[Token])> {
     let Ok((id, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -262,20 +297,23 @@ fn call(tokens: &[Token]) -> Result<(Option<(ast::Ident, Vec<ast::Expression>)>,
     };
 
     if &tokens[0] == &Token::RightP {
-        return Ok((Some((ident(id), vec![])), &tokens[1..]));
+        return Ok((Some(ast::Call::new(ident(id), vec![])), &tokens[1..]));
     }
 
     let (expr, tokens) = expression(tokens).unwrap();
 
     let tokens = match_next(tokens, Token::RightP)?;
 
-    Ok((expr.map(|expr| (ident(id), vec![expr])), &tokens))
+    Ok((
+        expr.map(|expr| ast::Call::new(ident(id), vec![expr])),
+        &tokens,
+    ))
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<StatementList> {
+pub fn parse(tokens: Vec<Token>) -> Result<ast::Block> {
     let (statment_list, tokens) = block(&tokens)?;
     assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
-    Ok(StatementList::new(
+    Ok(ast::Block::new(
         "global".to_string(),
         statment_list.into_iter().collect(),
     ))

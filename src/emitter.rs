@@ -24,7 +24,7 @@ mod stack;
 mod symbols;
 mod text;
 
-pub fn build_executable(ast: &ast::StatementList, output_path: PathBuf) {
+pub fn build_executable(ast: &ast::Block, output_path: PathBuf) {
     let (symbol_data, symbol_scopes) = data::build_symbol_data(ast);
     dbg!(&symbol_data);
 
