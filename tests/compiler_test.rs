@@ -45,7 +45,7 @@ fn test_funcs() {
     assert_eq!(
         &output,
         "before f1
-f1: param
+128
 f1: const
 33
 f1: let

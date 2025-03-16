@@ -1,6 +1,6 @@
-func f1(a &String) {
+func f1(a int) {
     print(a)
-    const b = .f1: const\n
+    const b = .\nf1: const\n
     print(b)
     let c = 33
     print(c)
@@ -15,7 +15,7 @@ func main() {
     let s = .before f1\n
     print(s)
 
-    let a = .f1: param\n
+    let a = 128
     f1(a)
 
     let b = .after f1\n

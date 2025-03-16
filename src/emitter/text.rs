@@ -1,16 +1,13 @@
 pub mod abi;
 pub mod mnemonics;
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    mem,
-};
+use std::collections::HashMap;
 
 pub use code_context::*;
 
 use super::{
     ast::{self},
-    data::{Data, DataBuilder, DataType},
+    data::{Data, DataType},
     stack::StackManager,
 };
 use mnemonics::*;
@@ -55,7 +52,7 @@ impl TextBuilder {
     }
 
     fn visit_ast(&mut self, block: &ast::Block) {
-        self.stack_manager.new_stack();
+        self.stack_manager.init_stack();
 
         let call = self.call("main");
         self.code_context.add_slice(&call);
@@ -65,13 +62,14 @@ impl TextBuilder {
     }
 
     fn visit_block(&mut self, block: &ast::Block) {
+        self.stack_manager.init_stack();
+
         let mnemonics = self.allocate_stack(&block);
         self.code_context.add_slice(&mnemonics);
         block.stmts.iter().for_each(|stmt| {
             self.visit_statement(stmt, &block.scope);
         });
-
-        // self.code_context.add_slice(&self.stack_manager.free());
+        self.code_context.add_slice(&self.stack_manager.free());
     }
 
     fn visit_statement(&mut self, statement: &ast::Statement, scope: &str) {
@@ -107,22 +105,26 @@ impl TextBuilder {
 
         args.iter().rev().enumerate().for_each(|(i, arg)| {
             if arg._type.modifiers.is_empty() {
+                self.code_context.add(
+                    MOV.op1(abi::ARG_REGISTERS[i])
+                        .op2(abi::ARG_REGISTERS[i])
+                        .disp(Operand::Offset32(0)),
+                );
                 self.code_context
                     .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
             }
         });
-
         self.visit_block(stmt_list);
 
         args.iter().enumerate().for_each(|(i, arg)| {
             if arg._type.modifiers.is_empty() {
                 self.code_context
-                    .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
+                    .add_slice(&self.stack_manager.pop_register(abi::ARG_REGISTERS[i]))
             }
         });
 
         self.code_context
-            .add_slice(&self.stack_manager.drop_function_stack());
+            .add_slice(&self.stack_manager.free_function_stack());
 
         self.code_context.add(RET.no_op());
     }
@@ -171,7 +173,7 @@ impl TextBuilder {
                     ast::Literal::Integer(n) => self.stack_manager.push(n.value as u64),
                 });
 
-                let data_loc = self.stack_manager.get_local_top();
+                let data_loc = self.stack_manager.block_stack_size();
 
                 let mut data_size = data.data_size;
                 let remainder = data_size % 8;
@@ -278,7 +280,7 @@ impl TextBuilder {
             .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.scope, l.var.value))
             .clone();
 
-        self.stack_manager.new_stack();
+        self.stack_manager.init_stack();
 
         let block = &l.body;
 
@@ -309,7 +311,7 @@ impl TextBuilder {
         self.code_context
             .add(JL.op1(Operand::Offset32(-(jump as i32))));
 
-        self.code_context.add_slice(&self.stack_manager.drop());
+        self.code_context.add_slice(&self.stack_manager.free());
     }
 
     fn allocate_stack(&mut self, stmts: &ast::Block) -> Vec<Mnemonic> {

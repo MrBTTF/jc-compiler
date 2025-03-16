@@ -1,13 +1,11 @@
 use ::std::path::PathBuf;
 
 use ast::*;
-use data::DataBuilder;
 #[cfg(target_os = "linux")]
 use elf::build;
 #[cfg(target_os = "linux")]
 use elf::sections::VIRTUAL_ADDRESS_START as IMAGE_BASE;
 use symbols::SymbolResolver;
-use text::TextBuilder;
 
 #[cfg(target_os = "windows")]
 use exe::build;

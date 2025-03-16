@@ -1,9 +1,4 @@
-use std::{
-    fmt::Display,
-    hash::Hash,
-    mem,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::{fmt::Display, hash::Hash, mem};
 
 #[derive(Debug, Clone)]
 pub struct Program {

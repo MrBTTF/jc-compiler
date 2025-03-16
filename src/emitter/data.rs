@@ -182,6 +182,7 @@ impl DataBuilder {
                             data_loc as u64,
                             *assign_type,
                         );
+                        dbg!(&data);
                         self.symbol_data.insert(id.clone(), data.clone());
                         ids.push(id.clone());
                     }
@@ -194,10 +195,13 @@ impl DataBuilder {
                 return_type: _,
                 body: stmt_list,
             }) => {
+                let mut stack = vec![];
                 for arg in args {
-                    let data_loc: usize = {
+                    let data_loc: usize = if matches!(arg._type.name, ast::TypeName::Int) {
                         stack.push(mem::size_of::<u64>());
                         stack.iter().sum()
+                    } else {
+                        0
                     };
 
                     let has_ref = !arg._type.modifiers.is_empty();
@@ -220,7 +224,6 @@ impl DataBuilder {
                     self.symbol_data.insert(id.clone(), data.clone());
                     ids.push(id.clone());
                 }
-                let mut stack = vec![];
                 self.visit_statement_list(stmt_list, &mut stack)
             }
             ast::Statement::Block(stmt_list) => self.visit_statement_list(stmt_list, stack),

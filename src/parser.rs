@@ -52,8 +52,6 @@ fn block<'a>(tokens: &'a [Token], scope: &str) -> Result<(ast::Block, &'a [Token
     let mut result = vec![];
     let mut stmt: Option<ast::Statement>;
     loop {
-        // panic!("stop");
-
         (stmt, tokens) = statement(&tokens, scope)?;
         if tokens.is_empty() {
             bail!("Expected end of block");
