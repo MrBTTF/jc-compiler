@@ -39,15 +39,12 @@ return_cf := "return" expression
 */
 
 pub fn parse(tokens: Vec<Token>) -> Result<ast::Block> {
-    let (statment_list, tokens) = block(&tokens, "global")?;
+    let (block, tokens) = block(&tokens, "global")?;
     assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
-    Ok(ast::Block::new(
-        "global".to_string(),
-        statment_list.into_iter().collect(),
-    ))
+    Ok(block)
 }
 
-fn block<'a>(tokens: &'a [Token], scope: &str) -> Result<(Vec<ast::Statement>, &'a [Token])> {
+fn block<'a>(tokens: &'a [Token], scope: &str) -> Result<(ast::Block, &'a [Token])> {
     let tokens = match_next(tokens, Token::BlockStart)?;
 
     let mut tokens = skip(&tokens, Token::StatementEnd);
@@ -71,7 +68,7 @@ fn block<'a>(tokens: &'a [Token], scope: &str) -> Result<(Vec<ast::Statement>, &
             break;
         };
     }
-    Ok((result, tokens))
+    Ok((ast::Block::new(scope.to_string(), result), tokens))
 }
 
 fn statement<'a>(
@@ -196,12 +193,7 @@ fn func_definition<'a>(
     let (block, tokens) = block(&tokens, &current_scope)?;
 
     let return_type = ast::Type::new(ast::TypeName::Unit, vec![]);
-    let func_definition = ast::FuncDeclaration::new(
-        func_name.clone(),
-        args,
-        return_type,
-        ast::Block::new(current_scope, block),
-    );
+    let func_definition = ast::FuncDeclaration::new(func_name.clone(), args, return_type, block);
 
     Ok((Some(func_definition), tokens))
 }
@@ -286,7 +278,7 @@ fn _loop<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::Loop>, &'a
         LOOP_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
 
-    let (body, tokens) = block(tokens, scope)?;
+    let (block, tokens) = block(tokens, &current_scope)?;
     Ok((
         Some(ast::Loop {
             var: ast::Ident {
@@ -294,7 +286,7 @@ fn _loop<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::Loop>, &'a
             },
             start: *start as u64,
             end: *end as u64,
-            body: ast::Block::new(current_scope, body),
+            body: block,
         }),
         tokens,
     ))
