@@ -21,17 +21,31 @@ impl StackManager {
     pub fn init_function_stack(&mut self) -> Vec<Mnemonic> {
         self.tops.push(0);
         self.grow(8); //  return address
-        self.new_stack()
-    }
 
-    pub fn new_stack(&mut self) -> Vec<Mnemonic> {
         let mut code = self.push_register(register::RBP);
         self.bottom_pointers.push(self.get_top());
         code.push(MOV.op1(register::RBP).op2(register::RSP));
         code
     }
 
+    pub fn new_stack(&mut self) {
+        self.bottom_pointers.push(self.get_top());
+    }
+
     pub fn drop(&mut self) -> Vec<Mnemonic> {
+        let code = if self.get_local_top() > 0 {
+            let local_size = self.get_local_top();
+            self.shrink(local_size);
+            vec![ADD.op1(register::RSP).op2(local_size as u32)]
+        } else {
+            vec![]
+        };
+
+        self.bottom_pointers.pop();
+        code
+    }
+
+    pub fn drop_function_stack(&mut self) -> Vec<Mnemonic> {
         let mut code = if self.get_local_top() > 0 {
             let local_size = self.get_local_top();
             self.shrink(local_size);
@@ -42,11 +56,6 @@ impl StackManager {
 
         code.extend(self.pop_register(register::RBP));
         self.bottom_pointers.pop();
-        code
-    }
-
-    pub fn drop_function_stack(&mut self) -> Vec<Mnemonic> {
-        let code = self.drop();
         self.shrink(8); // return address
         self.tops.pop();
         code

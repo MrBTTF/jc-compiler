@@ -15,7 +15,11 @@ fn test_loop() {
     assert_eq!(
         &output,
         "Loop starts
-01234
+Number: 0
+Number: 1
+Number: 2
+Number: 3
+Number: 4
 Loop ends
 "
     )

@@ -1,7 +1,9 @@
 func main() {
-    let info = .Loop starts\n
+    let info = .Loop starts
     print(info)
+    let n = .\nNumber: 
     for i in 0..5 {
+        print(n)
         print(i)
     }
     info = .\nLoop ends\n

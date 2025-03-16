@@ -1,4 +1,7 @@
-use crate::emitter::ast::{Ident, Literal, Loop};
+use crate::emitter::{
+    ast::{Ident, Literal, Loop},
+    stack,
+};
 use std::{
     borrow::BorrowMut,
     collections::{hash_map::Entry, HashMap},
@@ -9,7 +12,7 @@ use std::{
 
 use super::{
     ast::{self, VarDeclarationType},
-    Block, Integer,
+    Integer,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,7 +111,6 @@ pub struct DataBuilder {
     pub symbol_data: HashMap<String, Data>,
     pub scope_symbols: HashMap<String, Vec<String>>,
     data_section: Vec<usize>,
-    stack: Vec<usize>,
 }
 
 impl DataBuilder {
@@ -127,16 +129,20 @@ impl DataBuilder {
                 VarDeclarationType::Const,
             ),
         );
-        self.add_to_scope(&statement_list.id, vec![printf_d_arg.to_string()]);
+        self.add_to_scope(&statement_list.scope, vec![printf_d_arg.to_string()]);
 
-        self.visit_statement_list(statement_list);
+        let mut stack = vec![];
+        self.visit_statement_list(statement_list, &mut stack);
     }
 
-    pub fn visit_statement_list(&mut self, statement_list: &ast::Block) {
-        let mut stack = vec![];
+    pub fn visit_statement_list(
+        &mut self,
+        statement_list: &ast::Block,
+        mut stack: &mut Vec<usize>,
+    ) {
         statement_list.stmts.iter().for_each(|stmt| {
-            let ids = self.visit_statement(stmt, &mut stack, &statement_list.id);
-            self.add_to_scope(&statement_list.id, ids);
+            let ids = self.visit_statement(stmt, &mut stack, &statement_list.scope);
+            self.add_to_scope(&statement_list.scope, ids);
         });
     }
 
@@ -203,7 +209,7 @@ impl DataBuilder {
                         ast::TypeName::Unit => todo!(),
                     };
 
-                    let id = format!("{}::{}", f.value, &arg.name.value);
+                    let id = format!("{}::{}", stmt_list.scope, &arg.name.value);
                     let data = Data::new(
                         &id,
                         lit.into(),
@@ -214,10 +220,10 @@ impl DataBuilder {
                     self.symbol_data.insert(id.clone(), data.clone());
                     ids.push(id.clone());
                 }
-                dbg!(&stack);
-                self.visit_statement_list(stmt_list)
+                let mut stack = vec![];
+                self.visit_statement_list(stmt_list, &mut stack)
             }
-            ast::Statement::Block(stmt_list) => self.visit_statement_list(stmt_list),
+            ast::Statement::Block(stmt_list) => self.visit_statement_list(stmt_list, stack),
             ast::Statement::Assignment(_) => (),
             ast::Statement::ControlFlow(_) => (),
         }
@@ -226,7 +232,6 @@ impl DataBuilder {
 
     // fn visit_declaration(&mut self, statement: &ast::Statement) {}
     fn visit_loop(&mut self, l: &Loop, stack: &mut Vec<usize>) {
-        let mut stack = vec![];
         let id = &l.var;
         let lit = Literal::Integer(ast::Integer {
             value: l.start as i64,
@@ -240,7 +245,7 @@ impl DataBuilder {
             stack.push(data_size);
             stack.iter().sum()
         };
-        let id = format!("{}::{}", l.body.id, &id.value);
+        let id = format!("{}::{}", l.body.scope, &id.value);
         let data = Data::new(
             &id,
             lit.into(),
@@ -249,7 +254,7 @@ impl DataBuilder {
             ast::VarDeclarationType::Let,
         );
         self.symbol_data.insert(id.clone(), data.clone());
-        self.add_to_scope(&l.body.id, vec![id.clone()]);
+        self.add_to_scope(&l.body.scope, vec![id.clone()]);
     }
 
     fn add_to_scope(&mut self, parent: &str, ids: Vec<String>) {

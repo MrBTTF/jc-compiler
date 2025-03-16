@@ -113,13 +113,13 @@ impl FuncDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub id: String,
+    pub scope: String,
     pub stmts: Vec<Statement>,
 }
 
 impl Block {
-    pub fn new(id: String, stmts: Vec<Statement>) -> Self {
-        Self { id, stmts }
+    pub fn new(scope: String, stmts: Vec<Statement>) -> Self {
+        Self { scope, stmts }
     }
 }
 

@@ -38,7 +38,16 @@ control_flow := return_cf
 return_cf := "return" expression
 */
 
-fn block(tokens: &[Token]) -> Result<(Vec<ast::Statement>, &[Token])> {
+pub fn parse(tokens: Vec<Token>) -> Result<ast::Block> {
+    let (statment_list, tokens) = block(&tokens, "global")?;
+    assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
+    Ok(ast::Block::new(
+        "global".to_string(),
+        statment_list.into_iter().collect(),
+    ))
+}
+
+fn block<'a>(tokens: &'a [Token], scope: &str) -> Result<(Vec<ast::Statement>, &'a [Token])> {
     let tokens = match_next(tokens, Token::BlockStart)?;
 
     let mut tokens = skip(&tokens, Token::StatementEnd);
@@ -48,7 +57,7 @@ fn block(tokens: &[Token]) -> Result<(Vec<ast::Statement>, &[Token])> {
     loop {
         // panic!("stop");
 
-        (stmt, tokens) = statement(&tokens)?;
+        (stmt, tokens) = statement(&tokens, scope)?;
         if tokens.is_empty() {
             bail!("Expected end of block");
         }
@@ -65,27 +74,30 @@ fn block(tokens: &[Token]) -> Result<(Vec<ast::Statement>, &[Token])> {
     Ok((result, tokens))
 }
 
-fn statement(tokens: &[Token]) -> Result<(Option<ast::Statement>, &[Token])> {
+fn statement<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::Statement>, &'a [Token])> {
     if let (Some(decl), tokens) =
-        var_declaration(tokens).context("Couldn't parse var_declaration statement")?
+        var_declaration(tokens, scope).context("Couldn't parse var_declaration statement")?
     {
         Ok((Some(ast::Statement::VarDeclaration(decl)), tokens))
     } else if let (Some(func_def), tokens) =
-        func_definition(tokens).context("Couldn't parse statement")?
+        func_definition(tokens, scope).context("Couldn't parse statement")?
     {
         Ok((Some(ast::Statement::FuncDeclaration(func_def)), tokens))
     } else if let (Some(assgn), tokens) =
-        assignment(tokens).context("Couldn't parse assignment statement")?
+        assignment(tokens, scope).context("Couldn't parse assignment statement")?
     {
         Ok((Some(ast::Statement::Assignment(assgn)), tokens))
-    } else if let (Some(l), tokens) = _loop(tokens)? {
+    } else if let (Some(l), tokens) = _loop(tokens, scope)? {
         return Ok((Some(ast::Statement::Loop(l)), tokens));
     } else if let (Some(ctrl_flow), tokens) =
-        control_flow(tokens).context("Couldn't parse statement")?
+        control_flow(tokens, scope).context("Couldn't parse statement")?
     {
         Ok((Some(ast::Statement::ControlFlow(ctrl_flow)), tokens))
     } else if let (Some(expr), tokens) =
-        expression(tokens).context("Couldn't parse expression statement")?
+        expression(tokens, scope).context("Couldn't parse expression statement")?
     {
         Ok((Some(ast::Statement::Expression(expr)), tokens))
     } else {
@@ -93,7 +105,10 @@ fn statement(tokens: &[Token]) -> Result<(Option<ast::Statement>, &[Token])> {
     }
 }
 
-fn var_declaration(tokens: &[Token]) -> Result<(Option<ast::VarDeclaration>, &[Token])> {
+fn var_declaration<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::VarDeclaration>, &'a [Token])> {
     let Ok((keyword, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -107,7 +122,7 @@ fn var_declaration(tokens: &[Token]) -> Result<(Option<ast::VarDeclaration>, &[T
     let tokens = match_next(tokens, Token::Equal)
         .context(format!("Expected =, found: {:#?}", &tokens[0]))?;
 
-    let (Some(expr), tokens) = expression(&tokens).context("Expected expression")? else {
+    let (Some(expr), tokens) = expression(&tokens, scope).context("Expected expression")? else {
         return Ok((None, tokens));
     };
 
@@ -121,7 +136,10 @@ fn var_declaration(tokens: &[Token]) -> Result<(Option<ast::VarDeclaration>, &[T
     ))
 }
 
-fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDeclaration>, &[Token])> {
+fn func_definition<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::FuncDeclaration>, &'a [Token])> {
     let Ok((keyword, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -172,21 +190,26 @@ fn func_definition(tokens: &[Token]) -> Result<(Option<ast::FuncDeclaration>, &[
         tokens = _tokens;
     }
 
-    let (block, tokens) = block(&tokens)?;
-
     let func_name = ident(func_name);
+
+    let current_scope = format!("{}::{}", scope, func_name.value);
+    let (block, tokens) = block(&tokens, &current_scope)?;
+
     let return_type = ast::Type::new(ast::TypeName::Unit, vec![]);
     let func_definition = ast::FuncDeclaration::new(
         func_name.clone(),
         args,
         return_type,
-        ast::Block::new(func_name.value, block),
+        ast::Block::new(current_scope, block),
     );
 
     Ok((Some(func_definition), tokens))
 }
 
-fn assignment(tokens: &[Token]) -> Result<(Option<ast::Assignment>, &[Token])> {
+fn assignment<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::Assignment>, &'a [Token])> {
     let Ok((id, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -195,7 +218,7 @@ fn assignment(tokens: &[Token]) -> Result<(Option<ast::Assignment>, &[Token])> {
         return Ok((None, tokens));
     };
 
-    let (rhs_expr, tokens) = rhs_expression(&tokens)?;
+    let (rhs_expr, tokens) = rhs_expression(&tokens, scope)?;
     if let Some(rhs_expr) = rhs_expr {
         Ok((Some(ast::Assignment::new(ident(id), rhs_expr)), tokens))
     } else {
@@ -203,19 +226,26 @@ fn assignment(tokens: &[Token]) -> Result<(Option<ast::Assignment>, &[Token])> {
     }
 }
 
-fn rhs_expression(tokens: &[Token]) -> Result<(Option<ast::RhsExpression>, &[Token])> {
-     if let (Some(expr), tokens) = expression(tokens)? {
+fn rhs_expression<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::RhsExpression>, &'a [Token])> {
+    if let (Some(expr), tokens) = expression(tokens, scope)? {
         return Ok((Some(ast::RhsExpression::Expression(expr)), tokens));
-    } if let (block, tokens) = block(tokens)? {
+    }
+    if let (block, tokens) = block(tokens, scope)? {
         return todo!(); //Ok((Some(ast::RhsExpression::Block(Block::new(id, stmts))), tokens));
-    } 
+    }
     bail!("invalid rhs expression: {:?}", &tokens)
 }
 
-fn expression(tokens: &[Token]) -> Result<(Option<ast::Expression>, &[Token])> {
-    if let (Some(call), tokens) = call(tokens)? {
+fn expression<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::Expression>, &'a [Token])> {
+    if let (Some(call), tokens) = call(tokens, scope)? {
         return Ok((Some(ast::Expression::Call(call)), tokens));
-    } else if let (Some(literal), tokens) = literal(tokens) {
+    } else if let (Some(literal), tokens) = literal(tokens, scope) {
         return Ok((Some(ast::Expression::Literal(literal)), tokens));
     } else if let [Token::Ident(id), ..] = tokens {
         return Ok((Some(ast::Expression::Ident(ident(id))), &tokens[1..]));
@@ -223,7 +253,10 @@ fn expression(tokens: &[Token]) -> Result<(Option<ast::Expression>, &[Token])> {
     bail!("invalid expression: {:?}", &tokens)
 }
 
-fn control_flow(tokens: &[Token]) -> Result<(Option<ast::ControlFlow>, &[Token])> {
+fn control_flow<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::ControlFlow>, &'a [Token])> {
     let Ok((keyword, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -237,7 +270,7 @@ fn control_flow(tokens: &[Token]) -> Result<(Option<ast::ControlFlow>, &[Token])
 
 static LOOP_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
+fn _loop<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::Loop>, &'a [Token])> {
     let Ok(tokens) = starts_with_ident(tokens, "for") else {
         return Ok((None, tokens));
     };
@@ -248,8 +281,12 @@ fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
     let tokens = match_next(tokens, Token::Range)?;
     let (end, tokens) = match_number(tokens)?;
 
-    let (body, tokens) = block(tokens)?;
-    let id = format!("loop_{}", LOOP_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let current_scope = format!(
+        "{scope}::loop_{}",
+        LOOP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+
+    let (body, tokens) = block(tokens, scope)?;
     Ok((
         Some(ast::Loop {
             var: ast::Ident {
@@ -257,13 +294,13 @@ fn _loop(tokens: &[Token]) -> Result<(Option<ast::Loop>, &[Token])> {
             },
             start: *start as u64,
             end: *end as u64,
-            body: ast::Block::new(id, body),
+            body: ast::Block::new(current_scope, body),
         }),
         tokens,
     ))
 }
 
-fn literal(tokens: &[Token]) -> (Option<ast::Literal>, &[Token]) {
+fn literal<'a>(tokens: &'a [Token], scope: &str) -> (Option<ast::Literal>, &'a [Token]) {
     match tokens {
         [Token::String(s), ..] => (Some(ast::Literal::String(string(s))), &tokens[1..]),
         [Token::Number(num), ..] => (Some(ast::Literal::Integer(number(num))), &tokens[1..]),
@@ -287,7 +324,7 @@ fn number(number: &i64) -> ast::Integer {
     }
 }
 
-fn call(tokens: &[Token]) -> Result<(Option<ast::Call>, &[Token])> {
+fn call<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::Call>, &'a [Token])> {
     let Ok((id, tokens)) = match_ident(tokens) else {
         return Ok((None, tokens));
     };
@@ -300,22 +337,13 @@ fn call(tokens: &[Token]) -> Result<(Option<ast::Call>, &[Token])> {
         return Ok((Some(ast::Call::new(ident(id), vec![])), &tokens[1..]));
     }
 
-    let (expr, tokens) = expression(tokens).unwrap();
+    let (expr, tokens) = expression(tokens, scope).unwrap();
 
     let tokens = match_next(tokens, Token::RightP)?;
 
     Ok((
         expr.map(|expr| ast::Call::new(ident(id), vec![expr])),
         &tokens,
-    ))
-}
-
-pub fn parse(tokens: Vec<Token>) -> Result<ast::Block> {
-    let (statment_list, tokens) = block(&tokens)?;
-    assert!(tokens.is_empty(), "there are unparsed tokens: {tokens:#?}");
-    Ok(ast::Block::new(
-        "global".to_string(),
-        statment_list.into_iter().collect(),
     ))
 }
 
@@ -342,11 +370,11 @@ fn match_next(tokens: &[Token], target: Token) -> Result<&[Token]> {
     bail!("Unexptected token: {:#?}", target);
 }
 
-fn advance(tokens: &[Token]) -> &[Token] {
+fn advance<'a>(tokens: &'a [Token]) -> &[Token] {
     &tokens[1..]
 }
 
-fn match_ident(tokens: &[Token]) -> Result<(&str, &[Token])> {
+fn match_ident<'a>(tokens: &'a [Token]) -> Result<(&str, &'a [Token])> {
     let token = tokens.first().ok_or(anyhow!("Expected ident not found"))?;
 
     match token {
@@ -357,7 +385,7 @@ fn match_ident(tokens: &[Token]) -> Result<(&str, &[Token])> {
     }
 }
 
-fn match_number(tokens: &[Token]) -> Result<(&i64, &[Token])> {
+fn match_number<'a>(tokens: &'a [Token]) -> Result<(&i64, &'a [Token])> {
     let token = tokens.first().ok_or(anyhow!("Expected number not found"))?;
 
     match token {

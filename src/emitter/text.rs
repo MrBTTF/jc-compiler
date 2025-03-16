@@ -55,7 +55,7 @@ impl TextBuilder {
     }
 
     fn visit_ast(&mut self, block: &ast::Block) {
-        self.code_context.add_slice(&self.stack_manager.new_stack());
+        self.stack_manager.new_stack();
 
         let call = self.call("main");
         self.code_context.add_slice(&call);
@@ -68,7 +68,7 @@ impl TextBuilder {
         let mnemonics = self.allocate_stack(&block);
         self.code_context.add_slice(&mnemonics);
         block.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, &block.id);
+            self.visit_statement(stmt, &block.scope);
         });
 
         // self.code_context.add_slice(&self.stack_manager.free());
@@ -274,11 +274,11 @@ impl TextBuilder {
 
     fn visit_loop(&mut self, l: &ast::Loop, scope: &str) {
         let counter = self
-            .get_symbol_data(&l.body.id, &l.var.value)
-            .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.id, l.var.value))
+            .get_symbol_data(&l.body.scope, &l.var.value)
+            .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.scope, l.var.value))
             .clone();
 
-        self.code_context.add_slice(&self.stack_manager.new_stack());
+        self.stack_manager.new_stack();
 
         let block = &l.body;
 
@@ -287,7 +287,7 @@ impl TextBuilder {
 
         let offset = self.code_context.get_code_size();
         block.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, &block.id);
+            self.visit_statement(stmt, &block.scope);
         });
 
         self.code_context
@@ -313,7 +313,7 @@ impl TextBuilder {
     }
 
     fn allocate_stack(&mut self, stmts: &ast::Block) -> Vec<Mnemonic> {
-        let ids = self.scope_symbols.get(&stmts.id).unwrap().to_vec();
+        let ids = self.scope_symbols.get(&stmts.scope).unwrap().to_vec();
 
         let mut code = vec![];
         for id in ids.iter() {
@@ -333,10 +333,13 @@ impl TextBuilder {
     }
 
     fn get_symbol_data(&self, scope: &str, id: &str) -> Option<&Data> {
-        let id = format!("{}::{}", scope, id);
+        let id_path = format!("{}::{}", scope, id);
         // dbg!(&scope, &id);
 
-        self.symbol_data.get(&id)
+        self.symbol_data.get(&id_path).or_else(|| {
+            let (parent_scope, _) = scope.rsplit_once("::").unwrap();
+            self.get_symbol_data(parent_scope, id)
+        })
     }
 
     fn get_symbol_data_mut(&mut self, scope: &str, id: &str) -> Option<&mut Data> {
