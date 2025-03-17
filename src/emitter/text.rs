@@ -141,7 +141,7 @@ impl TextBuilder {
     fn visit_assignment(&mut self, assign: &ast::Assignment, scope: &str) {
         let ast::Assignment {
             variable_name: id,
-            rhs: rhs,
+            rhs,
         } = assign;
 
         let expr = match rhs {
@@ -186,9 +186,6 @@ impl TextBuilder {
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
                 data.data_size = data_size;
                 data.data_loc = data_loc as u64;
-
-                dbg!(&lit);
-                dbg!(&data);
             }
             ast::Expression::Ident(_) => todo!(),
             ast::Expression::Call(_) => todo!(),
@@ -206,7 +203,7 @@ impl TextBuilder {
                     .clone(),
                 _ => panic!("Function print expects on argument"),
             };
-            dbg!(&data);
+
             match data.data_type {
                 DataType::String(_) => {
                     let args = vec![data.clone()];
@@ -286,8 +283,8 @@ impl TextBuilder {
 
         let mnemonics = self.allocate_stack(&block);
         self.code_context.add_slice(&mnemonics);
-
         let offset = self.code_context.get_code_size();
+
         block.stmts.iter().for_each(|stmt| {
             self.visit_statement(stmt, &block.scope);
         });
@@ -315,11 +312,15 @@ impl TextBuilder {
     }
 
     fn allocate_stack(&mut self, stmts: &ast::Block) -> Vec<Mnemonic> {
-        let ids = self.scope_symbols.get(&stmts.scope).unwrap().to_vec();
+        let ids = match self.scope_symbols.get(&stmts.scope) {
+            Some(symbols) => symbols.clone(),
+            None => return vec![],
+        };
 
         let mut code = vec![];
         for id in ids.iter() {
             let data = self.symbol_data.get(id).unwrap();
+            dbg!(&data);
 
             code.extend(match data.decl_type {
                 ast::VarDeclarationType::Let => match &data.data_type {
@@ -330,7 +331,6 @@ impl TextBuilder {
             });
         }
         // dbg!(self.stack_manager.get_top());
-        // dbg!(&code);
         code
     }
 
