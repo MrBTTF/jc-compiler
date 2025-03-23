@@ -34,6 +34,12 @@ use crate::emitter::{
 pub fn print(code_context: &mut CodeContext, data: Data) {
     match data.decl_type {
         VarDeclarationType::Let => {
+            if data.reference {
+                code_context.add_slice(&[MOV
+                    .op1(register::RDI)
+                    .op2(register::RDI)
+                    .disp(Operand::Offset32(0))]);
+            }
             code_context.add_slice(&[
                 MOV.op1(register::RDX)
                     .op2(register::RDI)

@@ -184,11 +184,9 @@ impl DataBuilder {
         let mut symbols = vec![];
         let mut stack = vec![];
         for arg in &func_decl.args {
-            let data_loc: usize = if matches!(arg._type.name, ast::TypeName::Int) {
+            let data_loc: usize = {
                 stack.push(mem::size_of::<u64>());
                 stack.iter().sum()
-            } else {
-                0
             };
 
             let has_ref = !arg._type.modifiers.is_empty();

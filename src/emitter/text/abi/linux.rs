@@ -46,10 +46,8 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
         .enumerate()
         .for_each(|(i, arg)| match arg.decl_type {
             VarDeclarationType::Let => {
-                if !arg.reference {
-                    code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
-                    code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
-                }
+                code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
+                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
             }
             VarDeclarationType::Const => {
                 code_context.add(

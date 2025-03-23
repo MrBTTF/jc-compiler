@@ -96,12 +96,14 @@ impl TextBuilder {
             name,
             args,
             return_type,
-            body: stmt_list,
+            body,
         } = func_def;
 
         self.code_context.set_label(name.value.clone());
         self.code_context
             .add_slice(&self.stack_manager.init_function_stack());
+
+        self.stack_manager.init_stack();
 
         args.iter().rev().enumerate().for_each(|(i, arg)| {
             if arg._type.modifiers.is_empty() {
@@ -110,18 +112,23 @@ impl TextBuilder {
                         .op2(abi::ARG_REGISTERS[i])
                         .disp(Operand::Offset32(0)),
                 );
-                self.code_context
-                    .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
             }
+            self.code_context
+                .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
         });
-        self.visit_block(stmt_list);
+
+        let mnemonics = self.allocate_stack(&body);
+        self.code_context.add_slice(&mnemonics);
+        body.stmts.iter().for_each(|stmt| {
+            self.visit_statement(stmt, &body.scope);
+        });
 
         args.iter().enumerate().for_each(|(i, arg)| {
-            if arg._type.modifiers.is_empty() {
-                self.code_context
-                    .add_slice(&self.stack_manager.pop_register(abi::ARG_REGISTERS[i]))
-            }
+            self.code_context
+                .add_slice(&self.stack_manager.pop_register(abi::ARG_REGISTERS[i]))
         });
+
+        self.code_context.add_slice(&self.stack_manager.free());
 
         self.code_context
             .add_slice(&self.stack_manager.free_function_stack());
