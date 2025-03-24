@@ -1,6 +1,6 @@
 use crate::emitter::ast::Literal;
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, BTreeMap, HashMap},
     mem,
 };
 
@@ -126,7 +126,7 @@ impl Data {
 
 pub fn build_symbol_data(
     block: &ast::Block,
-) -> (HashMap<String, Data>, HashMap<String, Vec<String>>) {
+) -> (BTreeMap<String, Data>, HashMap<String, Vec<String>>) {
     let mut data_builder = DataBuilder::default();
     data_builder.visit_ast(block);
     (data_builder.symbol_data, data_builder.scope_symbols)
@@ -134,7 +134,7 @@ pub fn build_symbol_data(
 
 #[derive(Default, Debug)]
 pub struct DataBuilder {
-    pub symbol_data: HashMap<String, Data>,
+    pub symbol_data: BTreeMap<String, Data>,
     pub scope_symbols: HashMap<String, Vec<String>>,
     data_section: Vec<usize>,
 }
@@ -229,12 +229,12 @@ impl DataBuilder {
             };
 
             let id = format!("{}::{}", func_decl.body.scope, &arg.name.value);
-            let data = Data::new(&id, lit.into(), has_ref, data_loc);
+            let data: Data = Data::new(&id, lit.into(), has_ref, data_loc);
             self.symbol_data.insert(id.clone(), data.clone());
             symbols.push(id.clone());
+            self.add_to_scope(&func_decl.body.scope, vec![id.clone()]);
         }
 
-        // arguments are not pushed to scopes. Needs to be reconsidered
         self.visit_block(&func_decl.body, &mut stack);
     }
 

@@ -2,7 +2,7 @@ pub mod defs;
 pub mod sections;
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, BTreeMap, HashMap},
     fmt::Result,
     fs,
     io::Write,
@@ -29,7 +29,7 @@ use super::{
 pub fn build(
     output_path: PathBuf,
     code_context: &CodeContext,
-    symbol_data: &HashMap<String, Data>,
+    symbol_data: &BTreeMap<String, Data>,
     symbols: &[symbols::Symbol],
     relocations: &[symbols::Relocation],
 ) {

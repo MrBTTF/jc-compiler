@@ -1,7 +1,7 @@
 pub mod abi;
 pub mod mnemonics;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub use code_context::*;
 
@@ -17,7 +17,7 @@ mod stdlib;
 
 pub fn build_code_context(
     block: &ast::Block,
-    symbol_data: &HashMap<String, Data>,
+    symbol_data: &BTreeMap<String, Data>,
     scope_symbols: &HashMap<String, Vec<String>>,
     image_base: u64,
 ) -> CodeContext {
@@ -28,14 +28,14 @@ pub fn build_code_context(
 
 pub struct TextBuilder {
     code_context: CodeContext,
-    symbol_data: HashMap<String, Data>,
+    symbol_data: BTreeMap<String, Data>,
     scope_symbols: HashMap<String, Vec<String>>,
     stack_manager: StackManager,
 }
 
 impl TextBuilder {
     pub fn new(
-        symbol_data: &HashMap<String, Data>,
+        symbol_data: &BTreeMap<String, Data>,
         scope_symbols: &HashMap<String, Vec<String>>,
         image_base: u64,
     ) -> Self {
@@ -103,8 +103,6 @@ impl TextBuilder {
         self.code_context
             .add_slice(&self.stack_manager.init_function_stack());
 
-        self.stack_manager.init_stack();
-
         args.iter().rev().enumerate().for_each(|(i, arg)| {
             if arg._type.modifiers.is_empty() {
                 self.code_context.add(
@@ -113,26 +111,12 @@ impl TextBuilder {
                         .disp(Operand::Offset32(0)),
                 );
             }
-            self.code_context
-                .add_slice(&self.stack_manager.push_register(abi::ARG_REGISTERS[i]))
         });
 
-        let mnemonics = self.allocate_stack(&body);
-        self.code_context.add_slice(&mnemonics);
-        body.stmts.iter().for_each(|stmt| {
-            self.visit_statement(stmt, &body.scope);
-        });
-
-        args.iter().enumerate().for_each(|(i, arg)| {
-            self.code_context
-                .add_slice(&self.stack_manager.pop_register(abi::ARG_REGISTERS[i]))
-        });
-
-        self.code_context.add_slice(&self.stack_manager.free());
+        self.visit_block(body);
 
         self.code_context
             .add_slice(&self.stack_manager.free_function_stack());
-
         self.code_context.add(RET.no_op());
     }
 
@@ -294,7 +278,7 @@ impl TextBuilder {
             self.visit_statement(stmt, &block.scope);
         });
 
-        let data_loc: u32 = counter.data_loc.into() ;
+        let data_loc: u32 = counter.data_loc.into();
 
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
@@ -322,16 +306,27 @@ impl TextBuilder {
             Some(symbols) => symbols.clone(),
             None => return vec![],
         };
+        let mut current_register = 0;
 
         let mut code = vec![];
         for id in ids.iter() {
             let data = self.symbol_data.get(id).unwrap();
-            dbg!(&data);
 
             code.extend(match &data.data_loc {
-                DataLocation::Stack(_) => match &data.data_type {
-                    DataType::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
-                    DataType::Int(i) => self.stack_manager.push(*i as u64),
+                DataLocation::Stack(stack_loc) => match stack_loc {
+                    StackLocation::Block(_) => match &data.data_type {
+                        DataType::String(s) => {
+                            self.stack_manager.push_list(&str_to_u64(s), s.len())
+                        }
+                        DataType::Int(i) => self.stack_manager.push(*i as u64),
+                    },
+                    StackLocation::Function(_) => {
+                        let code = self
+                            .stack_manager
+                            .push_register(abi::ARG_REGISTERS[current_register]);
+                        current_register += 1;
+                        code
+                    }
                 },
                 DataLocation::DataSection(_) => vec![],
             });

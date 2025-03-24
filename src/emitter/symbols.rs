@@ -111,7 +111,7 @@ impl SymbolResolver {
 
     pub fn resolve(
         &self,
-        symbol_data: &HashMap<String, Data>,
+        symbol_data: &BTreeMap<String, Data>,
         labels: &BTreeMap<String, usize>,
     ) -> Vec<Symbol> {
         let mut symbols = vec![];

@@ -350,7 +350,7 @@ pub fn build_rel_text_section(relocations: &[Relocation]) -> Vec<u8> {
     result
 }
 
-pub fn build_data_section(literals: &HashMap<String, Data>) -> Vec<u8> {
+pub fn build_data_section(literals: &BTreeMap<String, Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
         .filter_map(|(id, data)| match data.data_loc {
