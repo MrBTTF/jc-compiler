@@ -1,11 +1,6 @@
-use std::mem;
-
-use crate::emitter::elf::sections::DATA_SECTION_ADDRESS_START;
+use crate::emitter::data::Data;
+use crate::emitter::data::{DataLocation, StackLocation};
 use crate::emitter::stack::StackManager;
-use crate::emitter::{
-    ast::{self, VarDeclarationType},
-    data::Data,
-};
 
 use super::super::{code_context::CodeContext, mnemonics::*};
 
@@ -22,12 +17,13 @@ pub enum Arg {
 
 impl From<Data> for Arg {
     fn from(data: Data) -> Self {
-        match data.decl_type {
-            ast::VarDeclarationType::Let => Arg::Stack(data.data_loc as i64),
-            ast::VarDeclarationType::Const => Arg::Data(data.data_loc as i64),
+        match data.data_loc {
+            DataLocation::Stack(stack_loc) => Arg::Stack(u64::from(stack_loc) as i64),
+            DataLocation::DataSection(data_loc) => Arg::Data(data_loc as i64),
         }
     }
 }
+
 pub const ARG_REGISTERS: &[register::Register] = &[
     register::RDI,
     register::RSI,
@@ -44,12 +40,13 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
 
     args.iter()
         .enumerate()
-        .for_each(|(i, arg)| match arg.decl_type {
-            VarDeclarationType::Let => {
+        .for_each(|(i, arg)| match &arg.data_loc {
+            DataLocation::Stack(stack_loc) => {
+                let data_loc: u32 = stack_loc.into();
                 code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
-                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(arg.data_loc as u32));
+                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(data_loc));
             }
-            VarDeclarationType::Const => {
+            DataLocation::DataSection(_) => {
                 code_context.add(
                     MOV.op1(ARG_REGISTERS[i])
                         .op2(0_u64)

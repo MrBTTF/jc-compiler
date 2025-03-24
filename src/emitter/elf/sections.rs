@@ -5,13 +5,9 @@ use std::{
 
 use elf::section;
 
-use crate::emitter::{
-    ast, data,
-    symbols::{DataSymbol, SymbolType},
-    text::Sliceable,
-};
+use crate::emitter::{ast, data::DataLocation, text::Sliceable};
 
-use super::{defs, Data, DataRef, DataType};
+use super::{defs, Data, DataType};
 
 pub type DWord = u64;
 
@@ -357,10 +353,10 @@ pub fn build_rel_text_section(relocations: &[Relocation]) -> Vec<u8> {
 pub fn build_data_section(literals: &HashMap<String, Data>) -> Vec<u8> {
     let mut literals: Vec<_> = literals
         .iter()
-        .filter_map(|(id, data)| match data.decl_type {
-            ast::VarDeclarationType::Let => None,
-            ast::VarDeclarationType::Const => {
-                Some((data.data_loc, id.clone(), data.data_type.clone()))
+        .filter_map(|(id, data)| match data.data_loc {
+            DataLocation::Stack(_) => None,
+            DataLocation::DataSection(data_loc) => {
+                Some((data_loc, id.clone(), data.data_type.clone()))
             }
         })
         .collect();

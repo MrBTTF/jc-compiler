@@ -32,8 +32,8 @@ use crate::emitter::{
 // }
 
 pub fn print(code_context: &mut CodeContext, data: Data) {
-    match data.decl_type {
-        VarDeclarationType::Let => {
+    match data.data_loc {
+        DataLocation::Stack(_) => {
             if data.reference {
                 code_context.add_slice(&[MOV
                     .op1(register::RDI)
@@ -48,7 +48,7 @@ pub fn print(code_context: &mut CodeContext, data: Data) {
                 MOV.op1(register::RSI).op2(register::RDI),
             ]);
         }
-        VarDeclarationType::Const => {
+        DataLocation::DataSection(_) => {
             code_context.add_slice(&[
                 MOV.op1(register::RDX).op2(data.data_size as u64),
                 MOV.op1(register::RSI).op2(register::RDI),

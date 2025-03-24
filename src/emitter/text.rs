@@ -7,7 +7,7 @@ pub use code_context::*;
 
 use super::{
     ast::{self},
-    data::{Data, DataType},
+    data::{Data, DataLocation, DataType, StackLocation},
     stack::StackManager,
 };
 use mnemonics::*;
@@ -162,7 +162,7 @@ impl TextBuilder {
                     .get_symbol_data(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value))
                     .clone();
-                if data.decl_type == ast::VarDeclarationType::Const {
+                if matches!(data.data_loc, DataLocation::DataSection(_)) {
                     panic!("Cannot assign to const data: {data:#?}");
                 }
                 let lit_data_type: DataType = lit.clone().into();
@@ -170,8 +170,6 @@ impl TextBuilder {
                 {
                     panic!("Cannot assign {:?} to {:?}", data.data_type, lit_data_type);
                 }
-
-                // data.set_data_type(lit.clone().into());
 
                 self.code_context.add_slice(&match lit {
                     ast::Literal::String(s) => {
@@ -192,7 +190,7 @@ impl TextBuilder {
                     .get_symbol_data_mut(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
                 data.data_size = data_size;
-                data.data_loc = data_loc as u64;
+                data.data_loc = DataLocation::Stack(StackLocation::Block(data_loc as u64));
             }
             ast::Expression::Ident(_) => todo!(),
             ast::Expression::Call(_) => todo!(),
@@ -296,10 +294,11 @@ impl TextBuilder {
             self.visit_statement(stmt, &block.scope);
         });
 
+        let data_loc: u32 = counter.data_loc.into() ;
+
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
-        self.code_context
-            .add(SUB.op1(register::RCX).op2(counter.data_loc as u32));
+        self.code_context.add(SUB.op1(register::RCX).op2(data_loc));
         self.code_context
             .add(INC.op1(register::RCX).disp(Operand::Offset32(0)));
         self.code_context.add(
@@ -329,12 +328,12 @@ impl TextBuilder {
             let data = self.symbol_data.get(id).unwrap();
             dbg!(&data);
 
-            code.extend(match data.decl_type {
-                ast::VarDeclarationType::Let => match &data.data_type {
+            code.extend(match &data.data_loc {
+                DataLocation::Stack(_) => match &data.data_type {
                     DataType::String(s) => self.stack_manager.push_list(&str_to_u64(s), s.len()),
                     DataType::Int(i) => self.stack_manager.push(*i as u64),
                 },
-                ast::VarDeclarationType::Const => vec![],
+                DataLocation::DataSection(_) => vec![],
             });
         }
         // dbg!(self.stack_manager.get_top());

@@ -29,56 +29,91 @@ pub struct DataRef {
 }
 
 #[derive(Clone, Debug)]
+pub enum StackLocation {
+    Block(u64),
+    Function(u64),
+}
+
+impl From<StackLocation> for u64 {
+    fn from(value: StackLocation) -> Self {
+        match value {
+            StackLocation::Block(loc) => loc,
+            StackLocation::Function(loc) => loc,
+        }
+    }
+}
+
+impl From<StackLocation> for u32 {
+    fn from(value: StackLocation) -> Self {
+        u64::from(value) as u32
+    }
+}
+
+impl From<&StackLocation> for u64 {
+    fn from(value: &StackLocation) -> Self {
+        value.clone().into()
+    }
+}
+
+impl From<&StackLocation> for u32 {
+    fn from(value: &StackLocation) -> Self {
+        value.clone().into()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum DataLocation {
+    Stack(StackLocation),
+    DataSection(u64),
+}
+
+impl From<DataLocation> for u64 {
+    fn from(value: DataLocation) -> Self {
+        match value {
+            DataLocation::Stack(stack_loc) => stack_loc.into(),
+            DataLocation::DataSection(data_loc) => data_loc,
+        }
+    }
+}
+
+impl From<DataLocation> for u32 {
+    fn from(value: DataLocation) -> Self {
+        u64::from(value) as u32
+    }
+}
+
+impl From<&DataLocation> for u64 {
+    fn from(value: &DataLocation) -> Self {
+        value.into()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Data {
     pub symbol: String,
     pub data_type: DataType,
     pub data_size: usize,
     pub reference: bool,
-    pub data_loc: u64,
-    pub decl_type: ast::VarDeclarationType,
+    pub data_loc: DataLocation,
 }
 
 impl Data {
-    pub fn new(
-        symbol: &str,
-        data_type: DataType,
-        reference: bool,
-        data_loc: u64,
-        assign_type: ast::VarDeclarationType,
-    ) -> Data {
+    pub fn new(symbol: &str, data_type: DataType, reference: bool, data_loc: DataLocation) -> Data {
         let data_size = match &data_type {
-            DataType::String(s) => match assign_type {
-                ast::VarDeclarationType::Let => s.len() + mem::size_of::<u64>(),
-                ast::VarDeclarationType::Const => s.len(),
+            DataType::String(s) => match data_loc {
+                DataLocation::Stack(_) => s.len() + mem::size_of::<u64>(),
+                DataLocation::DataSection(_) => s.len(),
             },
             DataType::Int(_) => mem::size_of::<i64>(),
         };
+
         Data {
             symbol: symbol.to_string(),
             data_type,
             data_size,
             reference,
             data_loc,
-            decl_type: assign_type,
         }
-    }
-
-    pub fn set_data_type(&mut self, data_type: DataType) {
-        self.data_type = data_type;
-        let mut data_size = match &self.data_type {
-            DataType::String(s) => s.len() + mem::size_of::<u64>(),
-            DataType::Int(_) => mem::size_of::<i64>(),
-        };
-        let remainder = data_size % 8;
-        if remainder != 0 {
-            data_size += 8 - remainder;
-        }
-        let diff = data_size as i64 - self.data_size as i64;
-        dbg!(self.data_loc, &self.data_type, data_size, self.data_size);
-        self.data_loc = self.data_loc.wrapping_add_signed(diff);
-
-        dbg!(self.data_loc);
-        self.data_size = data_size;
     }
 
     pub fn as_vec(&self) -> Vec<u8> {
@@ -116,8 +151,7 @@ impl DataBuilder {
                 &printf_d_arg,
                 data_type,
                 false,
-                0 as u64,
-                ast::VarDeclarationType::Const,
+                DataLocation::DataSection(0),
             ),
         );
         self.add_to_scope(&block.scope, vec![printf_d_arg.to_string()]);
@@ -158,21 +192,17 @@ impl DataBuilder {
 
         match expr {
             ast::Expression::Literal(lit) => {
-                let data_loc: usize = match var_decl.declarion_type {
-                    ast::VarDeclarationType::Let => get_position_on_stack(&mut stack, &lit),
-                    ast::VarDeclarationType::Const => {
-                        get_position_on_data(&mut self.data_section, &lit)
-                    }
+                let data_loc = match var_decl.declarion_type {
+                    ast::VarDeclarationType::Let => DataLocation::Stack(StackLocation::Block(
+                        get_position_on_stack(&mut stack, &lit) as u64,
+                    )),
+                    ast::VarDeclarationType::Const => DataLocation::DataSection(
+                        get_position_on_data(&mut self.data_section, &lit) as u64,
+                    ),
                 };
-                dbg!(data_loc);
+                dbg!(&data_loc);
                 let id = format!("{}::{}", scope, &var_decl.name.value);
-                let data = Data::new(
-                    &id,
-                    lit.clone().into(),
-                    false,
-                    data_loc as u64,
-                    var_decl.declarion_type,
-                );
+                let data = Data::new(&id, lit.clone().into(), false, data_loc);
                 self.symbol_data.insert(id.clone(), data.clone());
                 vec![id.clone()]
             }
@@ -184,10 +214,10 @@ impl DataBuilder {
         let mut symbols = vec![];
         let mut stack = vec![];
         for arg in &func_decl.args {
-            let data_loc: usize = {
+            let data_loc = DataLocation::Stack(StackLocation::Function({
                 stack.push(mem::size_of::<u64>());
-                stack.iter().sum()
-            };
+                stack.iter().sum::<usize>() as u64
+            }));
 
             let has_ref = !arg._type.modifiers.is_empty();
             let lit = match arg._type.name {
@@ -199,13 +229,7 @@ impl DataBuilder {
             };
 
             let id = format!("{}::{}", func_decl.body.scope, &arg.name.value);
-            let data = Data::new(
-                &id,
-                lit.into(),
-                has_ref,
-                data_loc as u64,
-                ast::VarDeclarationType::Let,
-            );
+            let data = Data::new(&id, lit.into(), has_ref, data_loc);
             self.symbol_data.insert(id.clone(), data.clone());
             symbols.push(id.clone());
         }
@@ -221,23 +245,19 @@ impl DataBuilder {
         let lit = Literal::Integer(ast::Integer {
             value: l.start as i64,
         });
-        let data_loc: usize = {
+
+        let data_loc = DataLocation::Stack(StackLocation::Block({
             let mut data_size = lit.len();
             let remainder = data_size % 8;
             if remainder != 0 {
                 data_size += 8 - remainder;
             }
             stack.push(data_size);
-            stack.iter().sum()
-        };
+            stack.iter().sum::<usize>() as u64
+        }));
+
         let id = format!("{}::{}", l.body.scope, &id.value);
-        let data = Data::new(
-            &id,
-            lit.into(),
-            false,
-            data_loc as u64,
-            ast::VarDeclarationType::Let,
-        );
+        let data = Data::new(&id, lit.into(), false, data_loc);
         self.symbol_data.insert(id.clone(), data.clone());
 
         self.visit_block(&l.body, &mut stack);
