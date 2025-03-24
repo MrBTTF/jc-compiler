@@ -1,9 +1,9 @@
 use std::{
-    collections::{btree_map, BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap},
     mem, usize,
 };
 
-use crate::emitter::symbols::{Relocation, Section, Symbol, SymbolType};
+use crate::emitter::symbols::{Relocation, Symbol};
 
 use super::{
     super::data::DataRef,

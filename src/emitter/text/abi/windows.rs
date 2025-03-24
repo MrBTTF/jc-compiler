@@ -1,7 +1,4 @@
-use crate::emitter::{
-    ast::{self, VarDeclarationType},
-    data::{Data, DataLocation},
-};
+use crate::emitter::data::{Data, DataLocation};
 
 use super::super::{code_context::CodeContext, mnemonics::*};
 

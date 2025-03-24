@@ -5,7 +5,6 @@ use crate::emitter::symbols::{self, DataSymbol, SymbolType};
 
 use self::register::RegisterSize;
 
-use super::code_context::Call;
 
 const REGISTER_EXT_INDEX: u8 = 0x30;
 const JMP_PREFIX: u8 = 0x0F;

@@ -2,8 +2,7 @@ pub mod defs;
 pub mod sections;
 
 use std::{
-    collections::{hash_map::Entry, BTreeMap, HashMap},
-    fmt::Result,
+    collections::{BTreeMap, HashMap},
     fs,
     io::Write,
     mem,
@@ -12,12 +11,11 @@ use std::{
 };
 
 use defs::{SHN_ABS, SHN_UNDEF};
-use elf::relocation;
 
 use crate::emitter::symbols::DataSymbol;
 
 use self::{
-    super::{ast, data::*},
+    super::data::*,
     sections::*,
 };
 

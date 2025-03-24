@@ -1,5 +1,5 @@
 use crate::emitter::data::Data;
-use crate::emitter::data::{DataLocation, StackLocation};
+use crate::emitter::data::DataLocation;
 use crate::emitter::stack::StackManager;
 
 use super::super::{code_context::CodeContext, mnemonics::*};

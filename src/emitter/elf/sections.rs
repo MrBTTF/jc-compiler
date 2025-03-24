@@ -1,11 +1,10 @@
 use std::{
-    collections::{hash_map::Entry, BTreeMap, HashMap},
+    collections::BTreeMap,
     mem,
 };
 
-use elf::section;
 
-use crate::emitter::{ast, data::DataLocation, text::Sliceable};
+use crate::emitter::{data::DataLocation, text::Sliceable};
 
 use super::{defs, Data, DataType};
 

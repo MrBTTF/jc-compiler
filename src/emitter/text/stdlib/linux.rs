@@ -3,7 +3,6 @@ use std::mem;
 use crate::emitter::{
     data::*,
     text::{abi::linux::*, mnemonics::*, CodeContext},
-    VarDeclarationType,
 };
 
 // pub fn print(code_context: &mut CodeContext, data: Data) {
