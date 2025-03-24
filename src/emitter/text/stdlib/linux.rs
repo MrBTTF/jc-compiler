@@ -5,31 +5,6 @@ use crate::emitter::{
     text::{abi::linux::*, mnemonics::*, CodeContext},
 };
 
-// pub fn print(code_context: &mut CodeContext, data: Data) {
-//     match data.decl_type {
-//         DeclarationType::Let => {
-//             code_context.add_slice(&[
-//                 MOV.op1(register::RDX)
-//                     .op2(register::RDI)
-//                     .disp(Operand::Offset32(0)),
-//                 MOV.op1(register::RSI).op2(register::RSI),
-//             ]);
-//         }
-//         DeclarationType::Const => {
-//             code_context.add_slice(&[
-//                 MOV.op1(register::RDX).op2(data.lit.len() as u64),
-//                 MOV.op1(register::RSI).op2(register::RDI),
-//             ]);
-//         }
-//     }
-
-//     code_context.add_slice(&[
-//         MOV.op1(register::RDI).op2(STDOUT_FD),
-//         MOV.op1(register::RAX).op2(SYS_WRITE),
-//         SYSCALL.op1(05 as u8),
-//     ]);
-// }
-
 pub fn print(code_context: &mut CodeContext, data: Data) {
     match data.data_loc {
         DataLocation::Stack(_) => {

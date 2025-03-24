@@ -9,21 +9,6 @@ pub const STDOUT_FD: u64 = 0x1;
 pub const SYS_WRITE: u64 = 0x1;
 pub const SYS_EXIT: u64 = 0x3c;
 
-#[derive(Debug)]
-pub enum Arg {
-    Data(i64),
-    Stack(i64),
-}
-
-impl From<Data> for Arg {
-    fn from(data: Data) -> Self {
-        match data.data_loc {
-            DataLocation::Stack(stack_loc) => Arg::Stack(u64::from(stack_loc) as i64),
-            DataLocation::DataSection(data_loc) => Arg::Data(data_loc as i64),
-        }
-    }
-}
-
 pub const ARG_REGISTERS: &[register::Register] = &[
     register::RDI,
     register::RSI,
