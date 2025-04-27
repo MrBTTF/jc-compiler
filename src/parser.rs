@@ -235,6 +235,8 @@ fn expression<'a>(
 ) -> Result<(Option<ast::Expression>, &'a [Token])> {
     if let (Some(call), tokens) = call(tokens, scope)? {
         return Ok((Some(ast::Expression::Call(call)), tokens));
+    } else if let (Some(unary), tokens) = unary(tokens, scope)? {
+        return Ok((Some(ast::Expression::Unary(unary)), tokens));
     } else if let (Some(literal), tokens) = literal(tokens, scope) {
         return Ok((Some(ast::Expression::Literal(literal)), tokens));
     } else if let [Token::Ident(id), ..] = tokens {
@@ -288,6 +290,16 @@ fn _loop<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::Loop>, &'a
         }),
         tokens,
     ))
+}
+
+fn unary<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::UnaryOperation>, &'a [Token])> {
+    if let Ok(tokens) = match_next(tokens, Token::Ref) {
+        let (Some(expr), tokens): (Option<ast::Expression>, &[Token]) = expression(tokens, scope).context("Expected expression")? else {
+            return Ok((None, tokens));
+        };
+        return Ok((Some(ast::UnaryOperation::Ref(Box::new(expr))), tokens));
+    }
+    Ok((None, tokens))
 }
 
 fn literal<'a>(tokens: &'a [Token], scope: &str) -> (Option<ast::Literal>, &'a [Token]) {

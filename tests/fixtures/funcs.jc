@@ -1,11 +1,11 @@
 func f1(a int) {
     print(a)
     const b = .\nf1: const\n
-    print(b)
+    print(&b)
     let c = 33
     print(c)
     let e = .\nf1: let\n
-    print(e)
+    print(&e)
   
     return
 }
@@ -13,20 +13,20 @@ func f1(a int) {
 
 func main() {
     let s = .before f1\n
-    print(s)
+    print(&s)
 
     let a = 128
     f1(a)
 
     let b = .after f1\n
-    print(b)
+    print(&b)
     const c = 199
     print(c)
     const d = .\nbefore f2\n
-    print(d)
+    print(&d)
 
     let e = .f2: param\n
-    f2(e)
+    f2(&e)
 
     return
 }
@@ -34,17 +34,17 @@ func main() {
 func f2(a &String) {
     print(a)
     const b = .f2: const\n
-    print(b)
+    print(&b)
     let d = .f2: let 1\n
-    print(d)
+    print(&d)
     let e = .f3: param\n
-    f3(e)
+    f3(&e)
     let c = 33
     print(c)
     d = .\nf2: let 2\n
-    print(d)
+    print(&d)
     let d2 = .f2: let 3\n
-    print(d2)
+    print(&d2)
   
     return
 }

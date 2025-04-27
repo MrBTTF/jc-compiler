@@ -2,15 +2,15 @@ func f1(a &String) {
 
     print(a)
     const b = .Nummer
-    print(b)
+    print(&b)
     let b1 = 33
     print(b1)
     let c = .\nSome test\n
-    print(c)
+    print(&c)
     const c1 = 199
     print(c1)
     const d = .Qwerty\n
-    print(d)
+    print(&d)
     
 
   
@@ -20,7 +20,7 @@ func f1(a &String) {
 
 func main() {
     let a = .Hello World!\n
-    f1(a)
+    f1(&a)
 
     return
 }

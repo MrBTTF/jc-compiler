@@ -210,6 +210,7 @@ pub enum Expression {
 pub enum UnaryOperation {
     Minus(Box<Expression>),
     Not(Box<Expression>),
+    Ref(Box<Expression>),
 }
 
 #[derive(Debug, Clone)]

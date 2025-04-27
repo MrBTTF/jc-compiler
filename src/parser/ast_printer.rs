@@ -89,7 +89,11 @@ fn visit_expression(expression: &Expression) -> String {
                 .join(", ");
             s1 + "(" + &s2 + ")"
         }
-        Expression::Unary(unary_operation) => todo!(),
+        Expression::Unary(unary_operation) => match unary_operation {
+            UnaryOperation::Minus(expr) => todo!(),
+            UnaryOperation::Not(expr) => todo!(),
+            UnaryOperation::Ref(expr) => format!("&{}", visit_expression(expr)),
+        },
         Expression::Binary(binary_operation) => todo!(),
     }
 }

@@ -1,13 +1,13 @@
 func main() {
     let info = .Loop starts
-    print(info)
+    print(&info)
     let n = .\nNumber: 
     for i in 0..5 {
-        print(n)
+        print(&n)
         print(i)
     }
     info = .\nLoop ends\n
-    print(info)
+    print(&info)
     
     return
 }

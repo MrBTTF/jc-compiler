@@ -22,7 +22,7 @@ impl From<ast::Literal> for DataType {
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct DataRef {
+pub struct DataRef { // Used only for Windows target
     pub symbol: String,
     pub offset: usize,
     pub data: Vec<u8>,
@@ -91,10 +91,10 @@ impl From<&DataLocation> for u64 {
 #[derive(Clone, Debug)]
 pub struct Data {
     pub symbol: String,
-    pub data_type: DataType,
+    pub data_type: DataType, // used in sections.rs and only for const
     pub data_size: usize,
     pub reference: bool,
-    pub data_loc: DataLocation,
+    pub data_loc: DataLocation, // in sections.rs and symbols and only for const
 }
 
 impl Data {

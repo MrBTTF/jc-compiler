@@ -8,17 +8,14 @@ use crate::emitter::{
 pub fn print(code_context: &mut CodeContext, data: Data) {
     match data.data_loc {
         DataLocation::Stack(_) => {
-            if data.reference {
-                code_context.add_slice(&[MOV
-                    .op1(register::RDI)
-                    .op2(register::RDI)
-                    .disp(Operand::Offset32(0))]);
-            }
             code_context.add_slice(&[
+                // Copy length value to RDX
                 MOV.op1(register::RDX)
                     .op2(register::RDI)
                     .disp(Operand::Offset32(0)),
+                // Move RDI to string pointer
                 ADD.op1(register::RDI).op2(mem::size_of::<u64>() as u32),
+                // Copy string pointer to RSI
                 MOV.op1(register::RSI).op2(register::RDI),
             ]);
         }
@@ -39,9 +36,6 @@ pub fn print(code_context: &mut CodeContext, data: Data) {
 
 pub fn printd(code_context: &mut CodeContext) {
     code_context.add_slice(&[
-        MOV.op1(register::RSI)
-            .op2(register::RSI)
-            .disp(Operand::Offset32(0)),
         XOR.op1(register::RAX).op2(register::RAX), // number of vector registers
         CALL.op1(Operand::Offset32(0)).symbol("printf".to_string()),
         XOR.op1(register::RDI).op2(register::RDI),

@@ -27,9 +27,19 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
         .enumerate()
         .for_each(|(i, arg)| match &arg.data_loc {
             DataLocation::Stack(stack_loc) => {
+                dbg!(&arg);
                 let data_loc: u32 = stack_loc.into();
-                code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
-                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(data_loc));
+                code_context.add_slice(&[
+                    MOV.op1(ARG_REGISTERS[i]).op2(register::RBP),
+                    SUB.op1(ARG_REGISTERS[i]).op2(data_loc),
+                ]);
+                if !arg.reference {
+                    code_context.add(
+                        MOV.op1(ARG_REGISTERS[i])
+                            .op2(ARG_REGISTERS[i])
+                            .disp(Operand::Offset32(0)),
+                    );
+                }
             }
             DataLocation::DataSection(_) => {
                 code_context.add(
@@ -37,6 +47,14 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
                         .op2(0_u64)
                         .symbol(arg.symbol.clone()),
                 );
+
+                if !arg.reference {
+                    code_context.add(
+                        MOV.op1(ARG_REGISTERS[i])
+                            .op2(ARG_REGISTERS[i])
+                            .disp(Operand::Offset32(0)),
+                    );
+                }
             }
         });
 }

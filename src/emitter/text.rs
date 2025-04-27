@@ -103,16 +103,6 @@ impl TextBuilder {
         self.code_context
             .add_slice(&self.stack_manager.init_function_stack());
 
-        args.iter().rev().enumerate().for_each(|(i, arg)| {
-            if arg._type.modifiers.is_empty() {
-                self.code_context.add(
-                    MOV.op1(abi::ARG_REGISTERS[i])
-                        .op2(abi::ARG_REGISTERS[i])
-                        .disp(Operand::Offset32(0)),
-                );
-            }
-        });
-
         self.visit_block(body);
 
         self.code_context
@@ -185,13 +175,24 @@ impl TextBuilder {
 
     fn visit_call(&mut self, call: &ast::Call, scope: &str) {
         if call.func_name.value == "print" {
-            let data = match call.args.first() {
-                Some(ast::Expression::Ident(id)) => self
-                    .get_symbol_data(&scope, &id.value)
-                    .unwrap_or_else(|| panic!("undefined variable: {}::{}", &scope, id.value))
-                    .clone(),
-                _ => panic!("Function print expects on argument"),
+            let (id, reference) = match call.args.first() {
+                Some(ast::Expression::Ident(id)) => (id, false),
+                Some(ast::Expression::Unary(unary)) => match unary {
+                    ast::UnaryOperation::Ref(id) => match id.as_ref() {
+                        ast::Expression::Ident(id) => (id, true),
+                        _ => panic!("Function print expects an identifier"),
+                    },
+                    _ => panic!("Function print expects a reference"),
+                },
+                _ => panic!("Function print expects one argument"),
             };
+
+            let mut data = self
+                .get_symbol_data(&scope, &id.value)
+                .unwrap_or_else(|| panic!("undefined variable: {}::{}", &scope, id.value))
+                .clone();
+
+            data.reference = reference;
 
             match data.data_type {
                 DataType::String(_) => {
@@ -208,12 +209,15 @@ impl TextBuilder {
                     abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
                 }
                 DataType::Int(n) => {
-                    let format = self
+                    let mut format = self
                         .symbol_data
                         .get("global::__printf_d_arg")
-                        .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"));
+                        .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"))
+                        .clone();
 
-                    let args = &[format.clone(), data.clone()];
+                    format.reference = true;
+
+                    let args = &[format, data.clone()];
 
                     abi::push_args(&mut self.code_context, &mut self.stack_manager, args);
 
@@ -235,14 +239,24 @@ impl TextBuilder {
                 .args
                 .iter()
                 .flat_map(|expr| {
-                    let id: &ast::Ident = match expr {
-                        ast::Expression::Ident(id) => id,
+                    let (id, reference) = match expr {
+                        ast::Expression::Ident(id) => (id, false),
+                        ast::Expression::Unary(unary) => match unary {
+                            ast::UnaryOperation::Ref(id) => match id.as_ref() {
+                                ast::Expression::Ident(id) => (id, true),
+                                _ => panic!("Function print expects an identifier"),
+                            },
+                            _ => panic!("Function print expects a reference"),
+                        },
+
                         _ => todo!(),
                     };
-                    let data = self
+                    let mut data = self
                         .get_symbol_data(&scope, &id.value)
                         .unwrap_or_else(|| panic!("undefined symbol: {}", id.value))
                         .clone();
+
+                    data.reference = reference;
 
                     vec![data]
                 })
