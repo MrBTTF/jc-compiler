@@ -7,8 +7,8 @@ pub use code_context::*;
 
 use super::{
     ast::{self},
-    data::{Data, DataLocation, DataType, StackLocation},
     stack::StackManager,
+    variables::{StackLocation, ValueLocation, ValueType, Variable},
 };
 use mnemonics::*;
 
@@ -17,32 +17,32 @@ mod stdlib;
 
 pub fn build_code_context(
     block: &ast::Block,
-    symbol_data: &BTreeMap<String, Data>,
-    scope_symbols: &HashMap<String, Vec<String>>,
+    variables: &BTreeMap<String, Variable>,
+    scopes: &HashMap<String, Vec<String>>,
     image_base: u64,
 ) -> CodeContext {
-    let mut text_builder = TextBuilder::new(symbol_data, scope_symbols, image_base);
+    let mut text_builder = TextBuilder::new(variables, scopes, image_base);
     text_builder.visit_ast(block);
     text_builder.get_code_context()
 }
 
 pub struct TextBuilder {
     code_context: CodeContext,
-    symbol_data: BTreeMap<String, Data>,
-    scope_symbols: HashMap<String, Vec<String>>,
+    variables: BTreeMap<String, Variable>,
+    scopes: HashMap<String, Vec<String>>,
     stack_manager: StackManager,
 }
 
 impl TextBuilder {
     pub fn new(
-        symbol_data: &BTreeMap<String, Data>,
-        scope_symbols: &HashMap<String, Vec<String>>,
+        variables: &BTreeMap<String, Variable>,
+        scopes: &HashMap<String, Vec<String>>,
         image_base: u64,
     ) -> Self {
         TextBuilder {
             code_context: CodeContext::new(image_base),
-            symbol_data: symbol_data.clone(),
-            scope_symbols: scope_symbols.clone(),
+            variables: variables.clone(),
+            scopes: scopes.clone(),
             stack_manager: StackManager::new(),
         }
     }
@@ -132,17 +132,21 @@ impl TextBuilder {
 
         match expr {
             ast::Expression::Literal(lit) => {
-                let data = self
-                    .get_symbol_data(&scope, &id.value)
+                let variable = self
+                    .get_variable(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value))
                     .clone();
-                if matches!(data.data_loc, DataLocation::DataSection(_)) {
-                    panic!("Cannot assign to const data: {data:#?}");
+                if matches!(variable.value_loc, ValueLocation::DataSection(_)) {
+                    panic!("Cannot assign to const data: {variable:#?}");
                 }
-                let lit_data_type: DataType = lit.clone().into();
-                if std::mem::discriminant(&data.data_type) != std::mem::discriminant(&lit_data_type)
+                let lit_data_type: ValueType = lit.clone().into();
+                if std::mem::discriminant(&variable.value_type)
+                    != std::mem::discriminant(&lit_data_type)
                 {
-                    panic!("Cannot assign {:?} to {:?}", data.data_type, lit_data_type);
+                    panic!(
+                        "Cannot assign {:?} to {:?}",
+                        variable.value_type, lit_data_type
+                    );
                 }
 
                 self.code_context.add_slice(&match lit {
@@ -154,17 +158,17 @@ impl TextBuilder {
 
                 let data_loc = self.stack_manager.block_stack_size();
 
-                let mut data_size = data.data_size;
-                let remainder = data_size % 8;
+                let mut value_size = variable.value_size;
+                let remainder = value_size % 8;
                 if remainder != 0 {
-                    data_size += 8 - remainder;
+                    value_size += 8 - remainder;
                 }
 
-                let data = self
-                    .get_symbol_data_mut(&scope, &id.value)
+                let variable = self
+                    .get_variable_mut(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
-                data.data_size = data_size;
-                data.data_loc = DataLocation::Stack(StackLocation::Block(data_loc as u64));
+                variable.value_size = value_size;
+                variable.value_loc = ValueLocation::Stack(StackLocation::Block(data_loc as u64));
             }
             ast::Expression::Ident(_) => todo!(),
             ast::Expression::Call(_) => todo!(),
@@ -187,16 +191,16 @@ impl TextBuilder {
                 _ => panic!("Function print expects one argument"),
             };
 
-            let mut data = self
-                .get_symbol_data(&scope, &id.value)
+            let mut variable = self
+                .get_variable(&scope, &id.value)
                 .unwrap_or_else(|| panic!("undefined variable: {}::{}", &scope, id.value))
                 .clone();
 
-            data.reference = reference;
+            variable.reference = reference;
 
-            match data.data_type {
-                DataType::String(_) => {
-                    let args = vec![data.clone()];
+            match variable.value_type {
+                ValueType::String(_) => {
+                    let args = vec![variable.clone()];
 
                     abi::push_args(
                         &mut self.code_context,
@@ -204,20 +208,20 @@ impl TextBuilder {
                         args.as_slice(),
                     );
 
-                    stdlib::print(&mut self.code_context, data);
+                    stdlib::print(&mut self.code_context, variable);
 
                     abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
                 }
-                DataType::Int(n) => {
+                ValueType::Int(n) => {
                     let mut format = self
-                        .symbol_data
+                        .variables
                         .get("global::__printf_d_arg")
                         .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"))
                         .clone();
 
                     format.reference = true;
 
-                    let args = &[format, data.clone()];
+                    let args = &[format, variable.clone()];
 
                     abi::push_args(&mut self.code_context, &mut self.stack_manager, args);
 
@@ -235,7 +239,7 @@ impl TextBuilder {
 
             return;
         } else {
-            let args: Vec<Data> = call
+            let args: Vec<Variable> = call
                 .args
                 .iter()
                 .flat_map(|expr| {
@@ -251,14 +255,14 @@ impl TextBuilder {
 
                         _ => todo!(),
                     };
-                    let mut data = self
-                        .get_symbol_data(&scope, &id.value)
+                    let mut variable = self
+                        .get_variable(&scope, &id.value)
                         .unwrap_or_else(|| panic!("undefined symbol: {}", id.value))
                         .clone();
 
-                    data.reference = reference;
+                    variable.reference = reference;
 
-                    vec![data]
+                    vec![variable]
                 })
                 .collect();
 
@@ -276,7 +280,7 @@ impl TextBuilder {
 
     fn visit_loop(&mut self, l: &ast::Loop, scope: &str) {
         let counter = self
-            .get_symbol_data(&l.body.scope, &l.var.value)
+            .get_variable(&l.body.scope, &l.var.value)
             .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.scope, l.var.value))
             .clone();
 
@@ -292,7 +296,7 @@ impl TextBuilder {
             self.visit_statement(stmt, &block.scope);
         });
 
-        let data_loc: u32 = counter.data_loc.into();
+        let data_loc: u32 = counter.value_loc.into();
 
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
@@ -316,7 +320,7 @@ impl TextBuilder {
     }
 
     fn allocate_stack(&mut self, stmts: &ast::Block) -> Vec<Mnemonic> {
-        let ids = match self.scope_symbols.get(&stmts.scope) {
+        let ids = match self.scopes.get(&stmts.scope) {
             Some(symbols) => symbols.clone(),
             None => return vec![],
         };
@@ -324,15 +328,15 @@ impl TextBuilder {
 
         let mut code = vec![];
         for id in ids.iter() {
-            let data = self.symbol_data.get(id).unwrap();
+            let data = self.variables.get(id).unwrap();
 
-            code.extend(match &data.data_loc {
-                DataLocation::Stack(stack_loc) => match stack_loc {
-                    StackLocation::Block(_) => match &data.data_type {
-                        DataType::String(s) => {
+            code.extend(match &data.value_loc {
+                ValueLocation::Stack(stack_loc) => match stack_loc {
+                    StackLocation::Block(_) => match &data.value_type {
+                        ValueType::String(s) => {
                             self.stack_manager.push_list(&str_to_u64(s), s.len())
                         }
-                        DataType::Int(i) => self.stack_manager.push(*i as u64),
+                        ValueType::Int(i) => self.stack_manager.push(*i as u64),
                     },
                     StackLocation::Function(_) => {
                         let code = self
@@ -342,28 +346,28 @@ impl TextBuilder {
                         code
                     }
                 },
-                DataLocation::DataSection(_) => vec![],
+                ValueLocation::DataSection(_) => vec![],
             });
         }
         // dbg!(self.stack_manager.get_top());
         code
     }
 
-    fn get_symbol_data(&self, scope: &str, id: &str) -> Option<&Data> {
+    fn get_variable(&self, scope: &str, id: &str) -> Option<&Variable> {
         let id_path = format!("{}::{}", scope, id);
         // dbg!(&scope, &id);
 
-        self.symbol_data.get(&id_path).or_else(|| {
+        self.variables.get(&id_path).or_else(|| {
             let (parent_scope, _) = scope.rsplit_once("::").unwrap();
-            self.get_symbol_data(parent_scope, id)
+            self.get_variable(parent_scope, id)
         })
     }
 
-    fn get_symbol_data_mut(&mut self, scope: &str, id: &str) -> Option<&mut Data> {
+    fn get_variable_mut(&mut self, scope: &str, id: &str) -> Option<&mut Variable> {
         let id = format!("{}::{}", scope, id);
         // dbg!(&scope, &id);
 
-        self.symbol_data.get_mut(&id)
+        self.variables.get_mut(&id)
     }
 
     fn call(&mut self, label: &str) -> Vec<Mnemonic> {

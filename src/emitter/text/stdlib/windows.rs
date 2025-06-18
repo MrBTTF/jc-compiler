@@ -1,6 +1,6 @@
 use crate::emitter::{text::abi::windows::ARG_REGISTERS, text::mnemonics::*, text::CodeContext};
 
-use crate::emitter::data::Data;
+use crate::emitter::variables::Variable;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Io {
@@ -30,7 +30,7 @@ fn _print(code_context: &mut CodeContext) {
     ]);
 }
 
-pub fn print(code_context: &mut CodeContext, data: Data) {
+pub fn print(code_context: &mut CodeContext, data: Variable) {
     code_context.add(MOV.op1(register::R8).op2(ARG_REGISTERS[0]));
     _get_io_handle(code_context, Io::Stdout);
     _print(code_context);

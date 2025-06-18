@@ -7,22 +7,23 @@ use std::{
 use super::{ast, Integer};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DataType {
+pub enum ValueType {
     String(String),
     Int(i64),
 }
 
-impl From<ast::Literal> for DataType {
+impl From<ast::Literal> for ValueType {
     fn from(value: ast::Literal) -> Self {
         match value {
-            Literal::String(s) => DataType::String(s),
-            Literal::Integer(i) => DataType::Int(i.value),
+            Literal::String(s) => ValueType::String(s),
+            Literal::Integer(i) => ValueType::Int(i.value),
         }
     }
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct DataRef { // Used only for Windows target
+pub struct DataRef {
+    // Used only for Windows target
     pub symbol: String,
     pub offset: usize,
     pub data: Vec<u8>,
@@ -62,101 +63,109 @@ impl From<&StackLocation> for u32 {
 }
 
 #[derive(Clone, Debug)]
-pub enum DataLocation {
+pub enum ValueLocation {
     Stack(StackLocation),
     DataSection(u64),
 }
 
-impl From<DataLocation> for u64 {
-    fn from(value: DataLocation) -> Self {
+impl From<ValueLocation> for u64 {
+    fn from(value: ValueLocation) -> Self {
         match value {
-            DataLocation::Stack(stack_loc) => stack_loc.into(),
-            DataLocation::DataSection(data_loc) => data_loc,
+            ValueLocation::Stack(stack_loc) => stack_loc.into(),
+            ValueLocation::DataSection(value_loc) => value_loc,
         }
     }
 }
 
-impl From<DataLocation> for u32 {
-    fn from(value: DataLocation) -> Self {
+impl From<ValueLocation> for u32 {
+    fn from(value: ValueLocation) -> Self {
         u64::from(value) as u32
     }
 }
 
-impl From<&DataLocation> for u64 {
-    fn from(value: &DataLocation) -> Self {
+impl From<&ValueLocation> for u64 {
+    fn from(value: &ValueLocation) -> Self {
         value.into()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Data {
-    pub symbol: String,
-    pub data_type: DataType, // used in sections.rs and only for const
-    pub data_size: usize,
+pub struct Variable {
+    pub name: String,
+    pub value_type: ValueType,
+    pub value_size: usize,
+    pub value_loc: ValueLocation,
     pub reference: bool,
-    pub data_loc: DataLocation, // in sections.rs and symbols and only for const
 }
 
-impl Data {
-    pub fn new(symbol: &str, data_type: DataType, reference: bool, data_loc: DataLocation) -> Data {
-        let data_size = match &data_type {
-            DataType::String(s) => match data_loc {
-                DataLocation::Stack(_) => s.len() + mem::size_of::<u64>(),
-                DataLocation::DataSection(_) => s.len(),
+impl Variable {
+    pub fn new(
+        name: &str,
+        value_type: ValueType,
+        reference: bool,
+        value_loc: ValueLocation,
+    ) -> Variable {
+        let value_size = match &value_type {
+            ValueType::String(s) => match value_loc {
+                ValueLocation::Stack(_) => s.len() + mem::size_of::<u64>(),
+                ValueLocation::DataSection(_) => s.len(),
             },
-            DataType::Int(_) => mem::size_of::<i64>(),
+            ValueType::Int(_) => mem::size_of::<i64>(),
         };
 
-        Data {
-            symbol: symbol.to_string(),
-            data_type,
-            data_size,
+        Variable {
+            name: name.to_string(),
+            value_type,
+            value_size,
+            value_loc,
             reference,
-            data_loc,
         }
     }
 
     pub fn as_vec(&self) -> Vec<u8> {
-        match &self.data_type {
-            DataType::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-            DataType::Int(i) => i.to_le_bytes().to_vec(),
+        match &self.value_type {
+            ValueType::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
+            ValueType::Int(i) => i.to_le_bytes().to_vec(),
         }
     }
 }
 
-pub fn build_symbol_data(
+pub fn build_variables(
     block: &ast::Block,
-) -> (BTreeMap<String, Data>, HashMap<String, Vec<String>>) {
-    let mut data_builder = DataBuilder::default();
-    data_builder.visit_ast(block);
-    (data_builder.symbol_data, data_builder.scope_symbols)
+) -> (BTreeMap<String, Variable>, HashMap<String, Vec<String>>) {
+    let mut variables_collector = VariablesCollector::default();
+    variables_collector.visit_ast(block);
+    (
+        variables_collector.variables,
+        variables_collector.scope_variable,
+    )
 }
 
 #[derive(Default, Debug)]
-pub struct DataBuilder {
-    pub symbol_data: BTreeMap<String, Data>,
-    pub scope_symbols: HashMap<String, Vec<String>>,
+pub struct VariablesCollector {
+    pub variables: BTreeMap<String, Variable>,
+    pub scope_variable: HashMap<String, Vec<String>>,
     data_section: Vec<usize>,
 }
 
-impl DataBuilder {
+impl VariablesCollector {
     pub fn visit_ast(&mut self, block: &ast::Block) {
         let number_fmt = "%d\0".to_string();
         self.data_section.push(number_fmt.len());
-        let data_type = DataType::String(number_fmt);
+        let value_type = ValueType::String(number_fmt);
         let printf_d_arg = "global::__printf_d_arg";
-        self.symbol_data.insert(
+        self.variables.insert(
             printf_d_arg.to_string(),
-            Data::new(
+            Variable::new(
                 &printf_d_arg,
-                data_type,
+                value_type,
                 false,
-                DataLocation::DataSection(0),
+                ValueLocation::DataSection(0),
             ),
         );
         self.add_to_scope(&block.scope, vec![printf_d_arg.to_string()]);
 
-        let stack = vec![];
+        let stack: Vec<usize> = vec![];
         self.visit_block(block, &stack);
     }
 
@@ -192,18 +201,18 @@ impl DataBuilder {
 
         match expr {
             ast::Expression::Literal(lit) => {
-                let data_loc = match var_decl.declarion_type {
-                    ast::VarDeclarationType::Let => DataLocation::Stack(StackLocation::Block(
+                let value_loc = match var_decl.declarion_type {
+                    ast::VarDeclarationType::Let => ValueLocation::Stack(StackLocation::Block(
                         get_position_on_stack(&mut stack, &lit) as u64,
                     )),
-                    ast::VarDeclarationType::Const => DataLocation::DataSection(
+                    ast::VarDeclarationType::Const => ValueLocation::DataSection(
                         get_position_on_data(&mut self.data_section, &lit) as u64,
                     ),
                 };
-                dbg!(&data_loc);
+                dbg!(&value_loc);
                 let id = format!("{}::{}", scope, &var_decl.name.value);
-                let data = Data::new(&id, lit.clone().into(), false, data_loc);
-                self.symbol_data.insert(id.clone(), data.clone());
+                let variable = Variable::new(&id, lit.clone().into(), false, value_loc);
+                self.variables.insert(id.clone(), variable.clone());
                 vec![id.clone()]
             }
             _ => todo!(),
@@ -214,7 +223,7 @@ impl DataBuilder {
         let mut symbols = vec![];
         let mut stack = vec![];
         for arg in &func_decl.args {
-            let data_loc = DataLocation::Stack(StackLocation::Function({
+            let value_loc = ValueLocation::Stack(StackLocation::Function({
                 stack.push(mem::size_of::<u64>());
                 stack.iter().sum::<usize>() as u64
             }));
@@ -229,8 +238,8 @@ impl DataBuilder {
             };
 
             let id = format!("{}::{}", func_decl.body.scope, &arg.name.value);
-            let data: Data = Data::new(&id, lit.into(), has_ref, data_loc);
-            self.symbol_data.insert(id.clone(), data.clone());
+            let variable: Variable = Variable::new(&id, lit.into(), has_ref, value_loc);
+            self.variables.insert(id.clone(), variable.clone());
             symbols.push(id.clone());
             self.add_to_scope(&func_decl.body.scope, vec![id.clone()]);
         }
@@ -246,26 +255,26 @@ impl DataBuilder {
             value: l.start as i64,
         });
 
-        let data_loc = DataLocation::Stack(StackLocation::Block({
-            let mut data_size = lit.len();
-            let remainder = data_size % 8;
+        let value_loc = ValueLocation::Stack(StackLocation::Block({
+            let mut value_size = lit.len();
+            let remainder = value_size % 8;
             if remainder != 0 {
-                data_size += 8 - remainder;
+                value_size += 8 - remainder;
             }
-            stack.push(data_size);
+            stack.push(value_size);
             stack.iter().sum::<usize>() as u64
         }));
 
         let id = format!("{}::{}", l.body.scope, &id.value);
-        let data = Data::new(&id, lit.into(), false, data_loc);
-        self.symbol_data.insert(id.clone(), data.clone());
+        let variable = Variable::new(&id, lit.into(), false, value_loc);
+        self.variables.insert(id.clone(), variable.clone());
 
         self.visit_block(&l.body, &mut stack);
         self.add_to_scope(&l.body.scope, vec![id.clone()]);
     }
 
     fn add_to_scope(&mut self, parent: &str, symbols: Vec<String>) {
-        match self.scope_symbols.entry(parent.to_string()) {
+        match self.scope_variable.entry(parent.to_string()) {
             Entry::Vacant(v) => {
                 v.insert(symbols);
             }
@@ -277,12 +286,12 @@ impl DataBuilder {
 }
 
 fn get_position_on_stack(stack: &mut Vec<usize>, lit: &ast::Literal) -> usize {
-    let mut data_size = lit.len();
-    let remainder = data_size % 8;
+    let mut value_size = lit.len();
+    let remainder = value_size % 8;
     if remainder != 0 {
-        data_size += 8 - remainder;
+        value_size += 8 - remainder;
     }
-    stack.push(data_size);
+    stack.push(value_size);
 
     if let ast::Literal::String(_) = lit {
         stack.push(mem::size_of::<u64>()); // length of string
@@ -291,7 +300,7 @@ fn get_position_on_stack(stack: &mut Vec<usize>, lit: &ast::Literal) -> usize {
 }
 
 fn get_position_on_data(data_section: &mut Vec<usize>, lit: &ast::Literal) -> usize {
-    let data_loc = data_section.iter().sum();
+    let value_loc = data_section.iter().sum();
     data_section.push(lit.len());
-    data_loc
+    value_loc
 }

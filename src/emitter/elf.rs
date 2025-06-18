@@ -14,10 +14,7 @@ use defs::{SHN_ABS, SHN_UNDEF};
 
 use crate::emitter::symbols::DataSymbol;
 
-use self::{
-    super::data::*,
-    sections::*,
-};
+use self::sections::*;
 
 use super::{
     symbols::{self},
@@ -27,13 +24,12 @@ use super::{
 pub fn build(
     output_path: PathBuf,
     code_context: &CodeContext,
-    symbol_data: &BTreeMap<String, Data>,
     symbols: &[symbols::Symbol],
     relocations: &[symbols::Relocation],
 ) {
     let object_file = output_path.with_extension("o");
 
-    let data_section_data = build_data_section(&symbol_data);
+    let data_section_data = build_data_section(symbols);
 
     // dbg!(&code_context);
 

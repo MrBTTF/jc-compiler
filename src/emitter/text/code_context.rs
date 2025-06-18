@@ -6,7 +6,7 @@ use std::{
 use crate::emitter::symbols::{Relocation, Symbol};
 
 use super::{
-    super::data::DataRef,
+    super::variables::DataRef,
     mnemonics::{self, Mnemonic, MnemonicName, SIZE_OF_JMP},
 };
 

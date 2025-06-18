@@ -1,12 +1,8 @@
-use std::{
-    collections::BTreeMap,
-    mem,
-};
+use std::mem;
 
+use crate::emitter::{symbols, text::Sliceable};
 
-use crate::emitter::{data::DataLocation, text::Sliceable};
-
-use super::{defs, Data, DataType};
+use super::defs;
 
 pub type DWord = u64;
 
@@ -349,27 +345,17 @@ pub fn build_rel_text_section(relocations: &[Relocation]) -> Vec<u8> {
     result
 }
 
-pub fn build_data_section(literals: &BTreeMap<String, Data>) -> Vec<u8> {
-    let mut literals: Vec<_> = literals
+pub fn build_data_section(literals: &[symbols::Symbol]) -> Vec<u8> {
+    let mut data: Vec<_> = literals
         .iter()
-        .filter_map(|(id, data)| match data.data_loc {
-            DataLocation::Stack(_) => None,
-            DataLocation::DataSection(data_loc) => {
-                Some((data_loc, id.clone(), data.data_type.clone()))
-            }
+        .filter_map(|symbol| match symbol.get_section() {
+            symbols::Section::Data => Some((symbol.get_offset(), symbol.get_data())),
+            _ => None,
         })
         .collect();
-    literals.sort_by_key(|(data_loc, _, _)| *data_loc);
-    literals
-        .iter()
-        .fold(vec![], |mut acc, (_, _, lit)| match lit {
-            DataType::String(string) => {
-                acc.extend(string.clone().into_bytes());
-                acc
-            }
-            DataType::Int(n) => {
-                acc.extend(n.to_le_bytes().to_vec());
-                acc
-            }
-        })
+    data.sort_by_key(|(offset, _)| *offset);
+    data.iter().fold(vec![], |mut acc, (_, ref d)| {
+        acc.extend(*d);
+        acc
+    })
 }

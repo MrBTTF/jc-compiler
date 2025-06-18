@@ -1,6 +1,6 @@
-use crate::emitter::data::Data;
-use crate::emitter::data::DataLocation;
 use crate::emitter::stack::StackManager;
+use crate::emitter::variables::ValueLocation;
+use crate::emitter::variables::Variable;
 
 use super::super::{code_context::CodeContext, mnemonics::*};
 
@@ -18,15 +18,15 @@ pub const ARG_REGISTERS: &[register::Register] = &[
     register::R9,
 ];
 
-pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args: &[Data]) {
+pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args: &[Variable]) {
     args.iter().enumerate().for_each(|(i, _)| {
         code_context.add_slice(&stack.push_register(ARG_REGISTERS[i]));
     });
 
     args.iter()
         .enumerate()
-        .for_each(|(i, arg)| match &arg.data_loc {
-            DataLocation::Stack(stack_loc) => {
+        .for_each(|(i, arg)| match &arg.value_loc {
+            ValueLocation::Stack(stack_loc) => {
                 dbg!(&arg);
                 let data_loc: u32 = stack_loc.into();
                 code_context.add_slice(&[
@@ -41,11 +41,11 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
                     );
                 }
             }
-            DataLocation::DataSection(_) => {
+            ValueLocation::DataSection(_) => {
                 code_context.add(
                     MOV.op1(ARG_REGISTERS[i])
                         .op2(0_u64)
-                        .symbol(arg.symbol.clone()),
+                        .symbol(arg.name.clone()),
                 );
 
                 if !arg.reference {

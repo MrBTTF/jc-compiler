@@ -1,6 +1,19 @@
 use std::collections::BTreeMap;
 
-use super::data::{Data, DataLocation};
+use crate::emitter::variables::ValueType;
+
+use super::variables::{ValueLocation, Variable};
+
+// pub enum Symbol{
+//     Variable(VariableSymbol),
+//     Function,
+// }
+
+// #[derive(Debug, Clone)]
+// pub struct VariableSymbol {
+//     location: usize,
+//     data_type: DataType,
+// }
 
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolType {
@@ -35,6 +48,7 @@ pub struct Symbol {
     section: Section,
     _type: SymbolType,
     scope: SymbolScope,
+    data: Vec<u8>,
 }
 impl Symbol {
     fn new(
@@ -43,6 +57,7 @@ impl Symbol {
         section: Section,
         _type: SymbolType,
         scope: SymbolScope,
+        data: Vec<u8>,
     ) -> Self {
         Self {
             name,
@@ -50,6 +65,7 @@ impl Symbol {
             section,
             _type,
             scope,
+            data,
         }
     }
 
@@ -71,6 +87,10 @@ impl Symbol {
 
     pub fn get_scope(&self) -> SymbolScope {
         self.scope
+    }
+
+    pub fn get_data(&self) -> &[u8] {
+        &self.data
     }
 }
 
@@ -111,15 +131,20 @@ impl SymbolResolver {
 
     pub fn resolve(
         &self,
-        symbol_data: &BTreeMap<String, Data>,
+        variables: &BTreeMap<String, Variable>,
         labels: &BTreeMap<String, usize>,
     ) -> Vec<Symbol> {
         let mut symbols = vec![];
 
-        for (id, data) in symbol_data {
-            let data_loc = match data.data_loc {
-                DataLocation::Stack(_) => continue,
-                DataLocation::DataSection(data_loc) => data_loc,
+        for (id, data) in variables {
+            let data_loc = match data.value_loc {
+                ValueLocation::Stack(_) => continue,
+                ValueLocation::DataSection(data_loc) => data_loc,
+            };
+
+            let data_bytes = match &data.value_type {
+                ValueType::String(string) => string.clone().into_bytes(),
+                ValueType::Int(n) => n.to_le_bytes().to_vec(),
             };
             symbols.push(Symbol::new(
                 id.clone(),
@@ -127,6 +152,7 @@ impl SymbolResolver {
                 Section::Data,
                 SymbolType::Data(DataSymbol::Comptime),
                 SymbolScope::Local,
+                data_bytes,
             ));
         }
 
@@ -137,6 +163,7 @@ impl SymbolResolver {
                 Section::Text,
                 SymbolType::Text,
                 SymbolScope::Local,
+                vec![],
             ));
         }
 
