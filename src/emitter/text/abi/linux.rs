@@ -29,6 +29,7 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
             ValueLocation::Stack(stack_loc) => {
                 dbg!(&arg);
                 let data_loc: u32 = stack_loc.into();
+                dbg!(data_loc);
                 code_context.add_slice(&[
                     MOV.op1(ARG_REGISTERS[i]).op2(register::RBP),
                     SUB.op1(ARG_REGISTERS[i]).op2(data_loc),

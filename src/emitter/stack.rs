@@ -21,9 +21,10 @@ impl StackManager {
     pub fn init_function_stack(&mut self) -> Vec<Mnemonic> {
         self.function_tops.push(0);
         // when function body is entered, the return address is pushed to stack implicitly
-        self.grow_function_stack(8);
+        // self.grow_function_stack(8);
 
         let mut code = self.push_register(register::RBP);
+        self.shrink_function_stack(8);
         code.push(MOV.op1(register::RBP).op2(register::RSP));
         code
     }
@@ -46,7 +47,7 @@ impl StackManager {
     }
 
     pub fn free_function_stack(&mut self) -> Vec<Mnemonic> {
-        self.shrink_function_stack(8); // return address
+        // self.shrink_function_stack(8); // return address
         self.function_tops.pop();
         vec![POP.op1(register::RBP)]
     }
@@ -55,16 +56,16 @@ impl StackManager {
         self.function_stack_size() - *self.block_bottoms.last().unwrap()
     }
 
-    fn function_stack_size(&self) -> usize {
+    pub fn function_stack_size(&self) -> usize {
         *self.function_tops.last().unwrap()
     }
 
-    fn grow_function_stack(&mut self, v: usize) {
+    pub fn grow_function_stack(&mut self, v: usize) {
         let top = self.function_tops.last_mut().unwrap();
         *top += v;
     }
 
-    fn shrink_function_stack(&mut self, v: usize) {
+    pub fn shrink_function_stack(&mut self, v: usize) {
         let top = self.function_tops.last_mut().unwrap();
         *top -= v;
     }
@@ -89,13 +90,31 @@ impl StackManager {
     }
 
     pub fn push_register(&mut self, reg: register::Register) -> Vec<Mnemonic> {
-        self.grow_function_stack(8);
-        vec![PUSH.op1(reg)]
+        self.push_registers(&[reg])
+    }
+
+    pub fn push_registers(&mut self, regs: &[register::Register]) -> Vec<Mnemonic> {
+        if regs.is_empty() {
+            return vec![];
+        }
+        self.grow_function_stack(regs.len() * 8);
+        regs.iter()
+            .map(|&reg| PUSH.op1(reg))
+            .collect::<Vec<Mnemonic>>()
     }
 
     pub fn pop_register(&mut self, reg: register::Register) -> Vec<Mnemonic> {
-        self.shrink_function_stack(8);
-        vec![POP.op1(reg)]
+        self.pop_registers(&[reg])
+    }
+
+    pub fn pop_registers(&mut self, regs: &[register::Register]) -> Vec<Mnemonic> {
+        if regs.is_empty() {
+            return vec![];
+        }
+        self.shrink_function_stack(regs.len() * 8);
+        regs.iter()
+            .map(|&reg| POP.op1(reg))
+            .collect::<Vec<Mnemonic>>()
     }
 
     pub fn align_for_call(&mut self) -> Vec<Mnemonic> {

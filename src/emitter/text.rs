@@ -1,7 +1,10 @@
 pub mod abi;
 pub mod mnemonics;
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    mem,
+};
 
 pub use code_context::*;
 
@@ -75,8 +78,8 @@ impl TextBuilder {
     fn visit_statement(&mut self, statement: &ast::Statement, scope: &str) {
         // println!("{}: {:#?}", statement_n, &statement);
         match statement {
-            ast::Statement::FuncDeclaration(func_def) => {
-                self.visit_func_definition(func_def);
+            ast::Statement::FuncDeclaration(func_decl) => {
+                self.visit_func_declaration(func_decl);
             }
             ast::Statement::Expression(expr) => {
                 self.visit_expression(expr, scope);
@@ -91,19 +94,41 @@ impl TextBuilder {
         };
     }
 
-    fn visit_func_definition(&mut self, func_def: &ast::FuncDeclaration) {
+    fn visit_func_declaration(&mut self, func_decl: &ast::FuncDeclaration) {
         let ast::FuncDeclaration {
             name,
             args,
             return_type,
             body,
-        } = func_def;
+        } = func_decl;
 
         self.code_context.set_label(name.value.clone());
         self.code_context
             .add_slice(&self.stack_manager.init_function_stack());
 
+        self.code_context.add_slice(
+            &self
+                .stack_manager
+                .push_registers(&abi::ARG_REGISTERS[..args.len()]),
+        );
+
+        for (i, arg) in args.iter().enumerate() {
+            dbg!(&func_decl.name.value, &arg.name.value);
+            let variable = self
+                .get_variable_mut(&func_decl.body.scope, &arg.name.value)
+                .unwrap();
+            variable.value_loc = ValueLocation::Stack(StackLocation::Function(
+                (mem::size_of::<u64>() * (i + 1)) as u64,
+            ));
+        }
+
         self.visit_block(body);
+
+        self.code_context.add_slice(
+            &self
+                .stack_manager
+                .pop_registers(&abi::ARG_REGISTERS[..args.len()]),
+        );
 
         self.code_context
             .add_slice(&self.stack_manager.free_function_stack());
@@ -148,7 +173,6 @@ impl TextBuilder {
                         variable.value_type, lit_data_type
                     );
                 }
-
                 self.code_context.add_slice(&match lit {
                     ast::Literal::String(s) => {
                         self.stack_manager.push_list(&str_to_u64(s), s.len())
@@ -156,7 +180,7 @@ impl TextBuilder {
                     ast::Literal::Integer(n) => self.stack_manager.push(n.value as u64),
                 });
 
-                let data_loc = self.stack_manager.block_stack_size();
+                let value_loc = self.stack_manager.function_stack_size();
 
                 let mut value_size = variable.value_size;
                 let remainder = value_size % 8;
@@ -168,7 +192,7 @@ impl TextBuilder {
                     .get_variable_mut(&scope, &id.value)
                     .unwrap_or_else(|| panic!("undefined variable: {}", id.value));
                 variable.value_size = value_size;
-                variable.value_loc = ValueLocation::Stack(StackLocation::Block(data_loc as u64));
+                variable.value_loc = ValueLocation::Stack(StackLocation::Block(value_loc as u64));
             }
             ast::Expression::Ident(_) => todo!(),
             ast::Expression::Call(_) => todo!(),
@@ -279,11 +303,6 @@ impl TextBuilder {
     }
 
     fn visit_loop(&mut self, l: &ast::Loop, scope: &str) {
-        let counter = self
-            .get_variable(&l.body.scope, &l.var.value)
-            .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.scope, l.var.value))
-            .clone();
-
         self.stack_manager.init_stack();
 
         let block = &l.body;
@@ -296,11 +315,15 @@ impl TextBuilder {
             self.visit_statement(stmt, &block.scope);
         });
 
-        let data_loc: u32 = counter.value_loc.into();
+        let counter = self
+            .get_variable(&l.body.scope, &l.var.value)
+            .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.scope, l.var.value));
+
+        let value_loc: u32 = counter.value_loc.clone().into();
 
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
-        self.code_context.add(SUB.op1(register::RCX).op2(data_loc));
+        self.code_context.add(SUB.op1(register::RCX).op2(value_loc));
         self.code_context
             .add(INC.op1(register::RCX).disp(Operand::Offset32(0)));
         self.code_context.add(
@@ -320,11 +343,12 @@ impl TextBuilder {
     }
 
     fn allocate_stack(&mut self, stmts: &ast::Block) -> Vec<Mnemonic> {
-        let ids = match self.scopes.get(&stmts.scope) {
+        let ids: Vec<String> = match self.scopes.get(&stmts.scope) {
             Some(symbols) => symbols.clone(),
             None => return vec![],
         };
-        let mut current_register = 0;
+
+        dbg!(&ids);
 
         let mut code = vec![];
         for id in ids.iter() {
@@ -332,19 +356,20 @@ impl TextBuilder {
 
             code.extend(match &data.value_loc {
                 ValueLocation::Stack(stack_loc) => match stack_loc {
-                    StackLocation::Block(_) => match &data.value_type {
-                        ValueType::String(s) => {
-                            self.stack_manager.push_list(&str_to_u64(s), s.len())
-                        }
-                        ValueType::Int(i) => self.stack_manager.push(*i as u64),
-                    },
-                    StackLocation::Function(_) => {
-                        let code = self
-                            .stack_manager
-                            .push_register(abi::ARG_REGISTERS[current_register]);
-                        current_register += 1;
+                    StackLocation::Block(_) => {
+                        let code = match &data.value_type {
+                            ValueType::String(s) => {
+                                self.stack_manager.push_list(&str_to_u64(s), s.len())
+                            }
+                            ValueType::Int(i) => self.stack_manager.push(*i as u64),
+                        };
+                        dbg!(self.stack_manager.function_stack_size());
+                        self.variables.get_mut(id).unwrap().value_loc = ValueLocation::Stack(
+                            StackLocation::Block(self.stack_manager.function_stack_size() as u64),
+                        );
                         code
                     }
+                    StackLocation::Function(_) => vec![],
                 },
                 ValueLocation::DataSection(_) => vec![],
             });

@@ -136,11 +136,12 @@ impl SymbolResolver {
     ) -> Vec<Symbol> {
         let mut symbols = vec![];
 
+        let mut data_loc = 0;
+
         for (id, data) in variables {
-            let data_loc = match data.value_loc {
-                ValueLocation::Stack(_) => continue,
-                ValueLocation::DataSection(data_loc) => data_loc,
-            };
+            if matches!(data.value_loc, ValueLocation::Stack(_)) {
+                continue;
+            }
 
             let data_bytes = match &data.value_type {
                 ValueType::String(string) => string.clone().into_bytes(),
@@ -154,6 +155,7 @@ impl SymbolResolver {
                 SymbolScope::Local,
                 data_bytes,
             ));
+            data_loc += data.value_size;
         }
 
         for (label, offset) in labels {

@@ -165,24 +165,22 @@ impl VariablesCollector {
         );
         self.add_to_scope(&block.scope, vec![printf_d_arg.to_string()]);
 
-        let stack: Vec<usize> = vec![];
-        self.visit_block(block, &stack);
+        self.visit_block(block);
     }
 
-    pub fn visit_block(&mut self, block: &ast::Block, stack: &[usize]) {
-        let mut stack = stack.to_vec();
+    pub fn visit_block(&mut self, block: &ast::Block) {
         block.stmts.iter().for_each(|stmt| match stmt {
             ast::Statement::Expression(_) => (),
-            ast::Statement::Loop(l) => self.visit_loop(l, &stack),
+            ast::Statement::Loop(l) => self.visit_loop(l),
             ast::Statement::VarDeclaration(var_declaration) => {
-                let symbols = self.visit_var_declaration(var_declaration, &mut stack, &block.scope);
+                let symbols = self.visit_var_declaration(var_declaration, &block.scope);
                 self.add_to_scope(&block.scope, symbols);
             }
 
             ast::Statement::FuncDeclaration(func_declaration) => {
                 self.visit_func_declaration(func_declaration)
             }
-            ast::Statement::Block(block) => self.visit_block(block, &stack),
+            ast::Statement::Block(block) => self.visit_block(block),
             ast::Statement::Assignment(_) => (),
             ast::Statement::ControlFlow(_) => (),
         });
@@ -191,7 +189,6 @@ impl VariablesCollector {
     fn visit_var_declaration(
         &mut self,
         var_decl: &ast::VarDeclaration,
-        mut stack: &mut Vec<usize>,
         scope: &str,
     ) -> Vec<String> {
         let expr = match &var_decl.rhs {
@@ -202,14 +199,9 @@ impl VariablesCollector {
         match expr {
             ast::Expression::Literal(lit) => {
                 let value_loc = match var_decl.declarion_type {
-                    ast::VarDeclarationType::Let => ValueLocation::Stack(StackLocation::Block(
-                        get_position_on_stack(&mut stack, &lit) as u64,
-                    )),
-                    ast::VarDeclarationType::Const => ValueLocation::DataSection(
-                        get_position_on_data(&mut self.data_section, &lit) as u64,
-                    ),
+                    ast::VarDeclarationType::Let => ValueLocation::Stack(StackLocation::Block(0)),
+                    ast::VarDeclarationType::Const => ValueLocation::DataSection(0),
                 };
-                dbg!(&value_loc);
                 let id = format!("{}::{}", scope, &var_decl.name.value);
                 let variable = Variable::new(&id, lit.clone().into(), false, value_loc);
                 self.variables.insert(id.clone(), variable.clone());
@@ -221,13 +213,7 @@ impl VariablesCollector {
 
     fn visit_func_declaration(&mut self, func_decl: &ast::FuncDeclaration) {
         let mut symbols = vec![];
-        let mut stack = vec![];
         for arg in &func_decl.args {
-            let value_loc = ValueLocation::Stack(StackLocation::Function({
-                stack.push(mem::size_of::<u64>());
-                stack.iter().sum::<usize>() as u64
-            }));
-
             let has_ref = !arg._type.modifiers.is_empty();
             let lit = match arg._type.name {
                 ast::TypeName::String => Literal::String("".to_string()),
@@ -238,38 +224,34 @@ impl VariablesCollector {
             };
 
             let id = format!("{}::{}", func_decl.body.scope, &arg.name.value);
-            let variable: Variable = Variable::new(&id, lit.into(), has_ref, value_loc);
+            let variable = Variable::new(
+                &id,
+                lit.into(),
+                has_ref,
+                ValueLocation::Stack(StackLocation::Function(0)),
+            );
             self.variables.insert(id.clone(), variable.clone());
             symbols.push(id.clone());
             self.add_to_scope(&func_decl.body.scope, vec![id.clone()]);
         }
 
-        self.visit_block(&func_decl.body, &mut stack);
+        self.visit_block(&func_decl.body);
     }
 
     // fn visit_declaration(&mut self, statement: &ast::Statement) {}
-    fn visit_loop(&mut self, l: &ast::Loop, stack: &[usize]) {
-        let mut stack = stack.to_vec();
+    fn visit_loop(&mut self, l: &ast::Loop) {
         let id = &l.var;
         let lit = Literal::Integer(ast::Integer {
             value: l.start as i64,
         });
 
-        let value_loc = ValueLocation::Stack(StackLocation::Block({
-            let mut value_size = lit.len();
-            let remainder = value_size % 8;
-            if remainder != 0 {
-                value_size += 8 - remainder;
-            }
-            stack.push(value_size);
-            stack.iter().sum::<usize>() as u64
-        }));
+        let value_loc = ValueLocation::Stack(StackLocation::Block(0));
 
         let id = format!("{}::{}", l.body.scope, &id.value);
         let variable = Variable::new(&id, lit.into(), false, value_loc);
         self.variables.insert(id.clone(), variable.clone());
 
-        self.visit_block(&l.body, &mut stack);
+        self.visit_block(&l.body);
         self.add_to_scope(&l.body.scope, vec![id.clone()]);
     }
 
@@ -283,24 +265,4 @@ impl VariablesCollector {
             }
         }
     }
-}
-
-fn get_position_on_stack(stack: &mut Vec<usize>, lit: &ast::Literal) -> usize {
-    let mut value_size = lit.len();
-    let remainder = value_size % 8;
-    if remainder != 0 {
-        value_size += 8 - remainder;
-    }
-    stack.push(value_size);
-
-    if let ast::Literal::String(_) = lit {
-        stack.push(mem::size_of::<u64>()); // length of string
-    }
-    stack.iter().sum()
-}
-
-fn get_position_on_data(data_section: &mut Vec<usize>, lit: &ast::Literal) -> usize {
-    let value_loc = data_section.iter().sum();
-    data_section.push(lit.len());
-    value_loc
 }
