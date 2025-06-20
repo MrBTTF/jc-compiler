@@ -103,17 +103,13 @@ impl TextBuilder {
         } = func_decl;
 
         self.code_context.set_label(name.value.clone());
-        self.code_context
-            .add_slice(&self.stack_manager.init_function_stack());
-
         self.code_context.add_slice(
             &self
                 .stack_manager
-                .push_registers(&abi::ARG_REGISTERS[..args.len()]),
+                .init_function_stack(&abi::ARG_REGISTERS[..args.len()]),
         );
 
         for (i, arg) in args.iter().enumerate() {
-            dbg!(&func_decl.name.value, &arg.name.value);
             let variable = self
                 .get_variable_mut(&func_decl.body.scope, &arg.name.value)
                 .unwrap();
@@ -127,11 +123,8 @@ impl TextBuilder {
         self.code_context.add_slice(
             &self
                 .stack_manager
-                .pop_registers(&abi::ARG_REGISTERS[..args.len()]),
+                .free_function_stack(&abi::ARG_REGISTERS[..args.len()]),
         );
-
-        self.code_context
-            .add_slice(&self.stack_manager.free_function_stack());
         self.code_context.add(RET.no_op());
     }
 

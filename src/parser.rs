@@ -372,11 +372,11 @@ fn match_next(tokens: &[Token], target: Token) -> Result<&[Token]> {
     bail!("Unexptected token: {:#?}", target);
 }
 
-fn advance<'a>(tokens: &'a [Token]) -> &[Token] {
+fn advance<'a>(tokens: &[Token]) -> &[Token] {
     &tokens[1..]
 }
 
-fn match_ident<'a>(tokens: &'a [Token]) -> Result<(&str, &'a [Token])> {
+fn match_ident<'a>(tokens: &[Token]) -> Result<(&str, &[Token])> {
     let token = tokens.first().ok_or(anyhow!("Expected ident not found"))?;
 
     match token {
@@ -387,7 +387,7 @@ fn match_ident<'a>(tokens: &'a [Token]) -> Result<(&str, &'a [Token])> {
     }
 }
 
-fn match_number<'a>(tokens: &'a [Token]) -> Result<(&i64, &'a [Token])> {
+fn match_number<'a>(tokens: &[Token]) -> Result<(&i64, &[Token])> {
     let token = tokens.first().ok_or(anyhow!("Expected number not found"))?;
 
     match token {

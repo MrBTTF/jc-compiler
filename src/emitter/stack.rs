@@ -18,14 +18,13 @@ impl StackManager {
         }
     }
 
-    pub fn init_function_stack(&mut self) -> Vec<Mnemonic> {
+    pub fn init_function_stack(&mut self, regs: &[register::Register]) -> Vec<Mnemonic> {
         self.function_tops.push(0);
-        // when function body is entered, the return address is pushed to stack implicitly
-        // self.grow_function_stack(8);
 
         let mut code = self.push_register(register::RBP);
         self.shrink_function_stack(8);
         code.push(MOV.op1(register::RBP).op2(register::RSP));
+        code.extend(self.push_registers(&regs));
         code
     }
 
@@ -46,10 +45,11 @@ impl StackManager {
         code
     }
 
-    pub fn free_function_stack(&mut self) -> Vec<Mnemonic> {
-        // self.shrink_function_stack(8); // return address
+    pub fn free_function_stack(&mut self, regs: &[register::Register]) -> Vec<Mnemonic> {
+        let mut code = self.pop_registers(&regs);
+        code.push(POP.op1(register::RBP));
         self.function_tops.pop();
-        vec![POP.op1(register::RBP)]
+        code
     }
 
     pub fn block_stack_size(&self) -> usize {

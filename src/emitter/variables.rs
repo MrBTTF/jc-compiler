@@ -173,8 +173,7 @@ impl VariablesCollector {
             ast::Statement::Expression(_) => (),
             ast::Statement::Loop(l) => self.visit_loop(l),
             ast::Statement::VarDeclaration(var_declaration) => {
-                let symbols = self.visit_var_declaration(var_declaration, &block.scope);
-                self.add_to_scope(&block.scope, symbols);
+                self.visit_var_declaration(var_declaration, &block.scope);
             }
 
             ast::Statement::FuncDeclaration(func_declaration) => {
@@ -186,11 +185,7 @@ impl VariablesCollector {
         });
     }
 
-    fn visit_var_declaration(
-        &mut self,
-        var_decl: &ast::VarDeclaration,
-        scope: &str,
-    ) -> Vec<String> {
+    fn visit_var_declaration(&mut self, var_decl: &ast::VarDeclaration, scope: &str) {
         let expr = match &var_decl.rhs {
             ast::RhsExpression::Expression(expr) => expr,
             ast::RhsExpression::Block(block) => todo!(),
@@ -203,16 +198,17 @@ impl VariablesCollector {
                     ast::VarDeclarationType::Const => ValueLocation::DataSection(0),
                 };
                 let id = format!("{}::{}", scope, &var_decl.name.value);
-                let variable = Variable::new(&id, lit.clone().into(), false, value_loc);
-                self.variables.insert(id.clone(), variable.clone());
-                vec![id.clone()]
+                self.variables.insert(
+                    id.clone(),
+                    Variable::new(&id, lit.clone().into(), false, value_loc),
+                );
+                self.add_to_scope(&scope, vec![id]);
             }
             _ => todo!(),
         }
     }
 
     fn visit_func_declaration(&mut self, func_decl: &ast::FuncDeclaration) {
-        let mut symbols = vec![];
         for arg in &func_decl.args {
             let has_ref = !arg._type.modifiers.is_empty();
             let lit = match arg._type.name {
@@ -224,14 +220,16 @@ impl VariablesCollector {
             };
 
             let id = format!("{}::{}", func_decl.body.scope, &arg.name.value);
-            let variable = Variable::new(
-                &id,
-                lit.into(),
-                has_ref,
-                ValueLocation::Stack(StackLocation::Function(0)),
+
+            self.variables.insert(
+                id.clone(),
+                Variable::new(
+                    &id,
+                    lit.into(),
+                    has_ref,
+                    ValueLocation::Stack(StackLocation::Function(0)),
+                ),
             );
-            self.variables.insert(id.clone(), variable.clone());
-            symbols.push(id.clone());
             self.add_to_scope(&func_decl.body.scope, vec![id.clone()]);
         }
 
@@ -248,8 +246,8 @@ impl VariablesCollector {
         let value_loc = ValueLocation::Stack(StackLocation::Block(0));
 
         let id = format!("{}::{}", l.body.scope, &id.value);
-        let variable = Variable::new(&id, lit.into(), false, value_loc);
-        self.variables.insert(id.clone(), variable.clone());
+        self.variables
+            .insert(id.clone(), Variable::new(&id, lit.into(), false, value_loc));
 
         self.visit_block(&l.body);
         self.add_to_scope(&l.body.scope, vec![id.clone()]);
