@@ -23,24 +23,15 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
         code_context.add_slice(&stack.push_register(ARG_REGISTERS[i]));
     });
 
-    args.iter()
-        .enumerate()
-        .for_each(|(i, arg)| match &arg.value_loc {
+    args.iter().enumerate().for_each(|(i, arg)| {
+        match &arg.value_loc {
             ValueLocation::Stack(stack_loc) => {
                 dbg!(&arg);
                 let data_loc: u32 = stack_loc.into();
-                dbg!(data_loc);
                 code_context.add_slice(&[
                     MOV.op1(ARG_REGISTERS[i]).op2(register::RBP),
                     SUB.op1(ARG_REGISTERS[i]).op2(data_loc),
                 ]);
-                if !arg.reference {
-                    code_context.add(
-                        MOV.op1(ARG_REGISTERS[i])
-                            .op2(ARG_REGISTERS[i])
-                            .disp(Operand::Offset32(0)),
-                    );
-                }
             }
             ValueLocation::DataSection(_) => {
                 code_context.add(
@@ -48,16 +39,16 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
                         .op2(0_u64)
                         .symbol(arg.name.clone()),
                 );
-
-                if !arg.reference {
-                    code_context.add(
-                        MOV.op1(ARG_REGISTERS[i])
-                            .op2(ARG_REGISTERS[i])
-                            .disp(Operand::Offset32(0)),
-                    );
-                }
             }
-        });
+        }
+        if !arg.reference {
+            code_context.add(
+                MOV.op1(ARG_REGISTERS[i])
+                    .op2(ARG_REGISTERS[i])
+                    .disp(Operand::Offset32(0)),
+            );
+        }
+    });
 }
 
 pub fn pop_args(code_context: &mut CodeContext, stack: &mut StackManager, args_count: usize) {

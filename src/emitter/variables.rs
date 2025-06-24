@@ -7,16 +7,16 @@ use std::{
 use super::{ast, Integer};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValueType {
+pub enum Value {
     String(String),
     Int(i64),
 }
 
-impl From<ast::Literal> for ValueType {
+impl From<ast::Literal> for Value {
     fn from(value: ast::Literal) -> Self {
         match value {
-            Literal::String(s) => ValueType::String(s),
-            Literal::Integer(i) => ValueType::Int(i.value),
+            Literal::String(s) => Value::String(s),
+            Literal::Integer(i) => Value::Int(i.value),
         }
     }
 }
@@ -68,31 +68,10 @@ pub enum ValueLocation {
     DataSection(u64),
 }
 
-impl From<ValueLocation> for u64 {
-    fn from(value: ValueLocation) -> Self {
-        match value {
-            ValueLocation::Stack(stack_loc) => stack_loc.into(),
-            ValueLocation::DataSection(value_loc) => value_loc,
-        }
-    }
-}
-
-impl From<ValueLocation> for u32 {
-    fn from(value: ValueLocation) -> Self {
-        u64::from(value) as u32
-    }
-}
-
-impl From<&ValueLocation> for u64 {
-    fn from(value: &ValueLocation) -> Self {
-        value.into()
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Variable {
     pub name: String,
-    pub value_type: ValueType,
+    pub value_type: Value,
     pub value_size: usize,
     pub value_loc: ValueLocation,
     pub reference: bool,
@@ -101,16 +80,16 @@ pub struct Variable {
 impl Variable {
     pub fn new(
         name: &str,
-        value_type: ValueType,
+        value_type: Value,
         reference: bool,
         value_loc: ValueLocation,
     ) -> Variable {
         let value_size = match &value_type {
-            ValueType::String(s) => match value_loc {
+            Value::String(s) => match value_loc {
                 ValueLocation::Stack(_) => s.len() + mem::size_of::<u64>(),
                 ValueLocation::DataSection(_) => s.len(),
             },
-            ValueType::Int(_) => mem::size_of::<i64>(),
+            Value::Int(_) => mem::size_of::<i64>(),
         };
 
         Variable {
@@ -124,8 +103,8 @@ impl Variable {
 
     pub fn as_vec(&self) -> Vec<u8> {
         match &self.value_type {
-            ValueType::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
-            ValueType::Int(i) => i.to_le_bytes().to_vec(),
+            Value::String(s) => [s.as_bytes().to_vec(), vec![0]].concat(),
+            Value::Int(i) => i.to_le_bytes().to_vec(),
         }
     }
 }
@@ -145,14 +124,12 @@ pub fn build_variables(
 pub struct VariablesCollector {
     pub variables: BTreeMap<String, Variable>,
     pub scope_variable: HashMap<String, Vec<String>>,
-    data_section: Vec<usize>,
 }
 
 impl VariablesCollector {
     pub fn visit_ast(&mut self, block: &ast::Block) {
-        let number_fmt = "%d\0".to_string();
-        self.data_section.push(number_fmt.len());
-        let value_type = ValueType::String(number_fmt);
+        let number_fmt: String = "%d\0".to_string();
+        let value_type = Value::String(number_fmt);
         let printf_d_arg = "global::__printf_d_arg";
         self.variables.insert(
             printf_d_arg.to_string(),

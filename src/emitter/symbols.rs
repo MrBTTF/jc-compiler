@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::emitter::variables::ValueType;
+use crate::emitter::variables::Value;
 
 use super::variables::{ValueLocation, Variable};
 
@@ -144,9 +144,17 @@ impl SymbolResolver {
             }
 
             let data_bytes = match &data.value_type {
-                ValueType::String(string) => string.clone().into_bytes(),
-                ValueType::Int(n) => n.to_le_bytes().to_vec(),
+                Value::String(string) => {
+                    let string_length = data.value_size as u64;
+                    [
+                        string_length.to_le_bytes().to_vec(),
+                        string.clone().into_bytes(),
+                    ]
+                    .concat()
+                }
+                Value::Int(n) => n.to_le_bytes().to_vec(),
             };
+            let value_size = data_bytes.len();
             symbols.push(Symbol::new(
                 id.clone(),
                 data_loc as usize,
@@ -155,7 +163,7 @@ impl SymbolResolver {
                 SymbolScope::Local,
                 data_bytes,
             ));
-            data_loc += data.value_size;
+            data_loc += value_size;
         }
 
         for (label, offset) in labels {

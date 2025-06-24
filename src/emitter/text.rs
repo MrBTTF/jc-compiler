@@ -11,7 +11,7 @@ pub use code_context::*;
 use super::{
     ast::{self},
     stack::StackManager,
-    variables::{StackLocation, ValueLocation, ValueType, Variable},
+    variables::{StackLocation, Value, ValueLocation, Variable},
 };
 use mnemonics::*;
 
@@ -157,7 +157,7 @@ impl TextBuilder {
                 if matches!(variable.value_loc, ValueLocation::DataSection(_)) {
                     panic!("Cannot assign to const data: {variable:#?}");
                 }
-                let lit_data_type: ValueType = lit.clone().into();
+                let lit_data_type: Value = lit.clone().into();
                 if std::mem::discriminant(&variable.value_type)
                     != std::mem::discriminant(&lit_data_type)
                 {
@@ -216,7 +216,7 @@ impl TextBuilder {
             variable.reference = reference;
 
             match variable.value_type {
-                ValueType::String(_) => {
+                Value::String(_) => {
                     let args = vec![variable.clone()];
 
                     abi::push_args(
@@ -229,7 +229,7 @@ impl TextBuilder {
 
                     abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
                 }
-                ValueType::Int(n) => {
+                Value::Int(n) => {
                     let mut format = self
                         .variables
                         .get("global::__printf_d_arg")
@@ -312,7 +312,10 @@ impl TextBuilder {
             .get_variable(&l.body.scope, &l.var.value)
             .unwrap_or_else(|| panic!("undefined variable: {}::{}", l.body.scope, l.var.value));
 
-        let value_loc: u32 = counter.value_loc.clone().into();
+        let value_loc: u32 = match &counter.value_loc {
+            ValueLocation::Stack(stack_location) => stack_location.into(),
+            ValueLocation::DataSection(_) => panic!("Loop variable cannot be const"),
+        };
 
         self.code_context
             .add(MOV.op1(register::RCX).op2(register::RBP));
@@ -351,10 +354,10 @@ impl TextBuilder {
                 ValueLocation::Stack(stack_loc) => match stack_loc {
                     StackLocation::Block(_) => {
                         let code = match &data.value_type {
-                            ValueType::String(s) => {
+                            Value::String(s) => {
                                 self.stack_manager.push_list(&str_to_u64(s), s.len())
                             }
-                            ValueType::Int(i) => self.stack_manager.push(*i as u64),
+                            Value::Int(i) => self.stack_manager.push(*i as u64),
                         };
                         dbg!(self.stack_manager.function_stack_size());
                         self.variables.get_mut(id).unwrap().value_loc = ValueLocation::Stack(

@@ -6,26 +6,16 @@ use crate::emitter::{
 };
 
 pub fn print(code_context: &mut CodeContext, data: Variable) {
-    match data.value_loc {
-        ValueLocation::Stack(_) => {
-            code_context.add_slice(&[
-                // Copy length value to RDX
-                MOV.op1(register::RDX)
-                    .op2(register::RDI)
-                    .disp(Operand::Offset32(0)),
-                // Move RDI to string pointer
-                ADD.op1(register::RDI).op2(mem::size_of::<u64>() as u32),
-                // Copy string pointer to RSI
-                MOV.op1(register::RSI).op2(register::RDI),
-            ]);
-        }
-        ValueLocation::DataSection(_) => {
-            code_context.add_slice(&[
-                MOV.op1(register::RDX).op2(data.value_size as u64),
-                MOV.op1(register::RSI).op2(register::RDI),
-            ]);
-        }
-    }
+    code_context.add_slice(&[
+        // Copy length value to RDX
+        MOV.op1(register::RDX)
+            .op2(register::RDI)
+            .disp(Operand::Offset32(0)),
+        // Move RDI to string pointer
+        ADD.op1(register::RDI).op2(mem::size_of::<u64>() as u32),
+        // Copy string pointer to RSI
+        MOV.op1(register::RSI).op2(register::RDI),
+    ]);
 
     code_context.add_slice(&[
         MOV.op1(register::RDI).op2(STDOUT_FD),
@@ -36,6 +26,8 @@ pub fn print(code_context: &mut CodeContext, data: Variable) {
 
 pub fn printd(code_context: &mut CodeContext) {
     code_context.add_slice(&[
+        // Skip length of format string
+        ADD.op1(register::RDI).op2(mem::size_of::<u64>() as u32),
         XOR.op1(register::RAX).op2(register::RAX), // number of vector registers
         CALL.op1(Operand::Offset32(0)).symbol("printf".to_string()),
         XOR.op1(register::RDI).op2(register::RDI),
