@@ -126,8 +126,9 @@ pub fn build(
     file.write_all(&strtab_section_data).unwrap();
     file.write_all(&relocation_section_data).unwrap();
 
-    let child = Command::new("ld")
+    let child = Command::new("gcc")
         .args(&[
+            "-nostartfiles",
             "-lc",
             "-o",
             output_path.to_str().unwrap(),
