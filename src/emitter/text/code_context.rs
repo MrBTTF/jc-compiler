@@ -22,7 +22,6 @@ pub struct CodeContext {
     pc: usize,
     offsets: Vec<usize>,
     calls: BTreeMap<String, Call>,
-    const_data: BTreeMap<usize, DataRef>,
     labels: BTreeMap<String, usize>,
     symbols: BTreeMap<String, Symbol>,
     relocations: Vec<Relocation>,
@@ -36,7 +35,6 @@ impl CodeContext {
             pc: 0,
             offsets: vec![0],
             calls: BTreeMap::new(),
-            const_data: BTreeMap::new(),
             labels: BTreeMap::new(),
             symbols: BTreeMap::new(),
             relocations: vec![],
@@ -59,17 +57,6 @@ impl CodeContext {
             self.relocations.push(relocation);
         }
         self
-    }
-
-    pub fn with_const_data(&mut self, symbol: &str, data: Vec<u8>) {
-        self.const_data.insert(
-            self.get_pc() - 1,
-            DataRef {
-                symbol: symbol.to_string(),
-                offset: self.last().get_value_loc(),
-                data,
-            },
-        );
     }
 
     pub fn add_slice(&mut self, mnemonics: &[Mnemonic]) {
@@ -112,10 +99,6 @@ impl CodeContext {
 
     pub fn get_calls(&self) -> BTreeMap<String, Call> {
         self.calls.clone()
-    }
-
-    pub fn get_const_data(&self) -> BTreeMap<usize, DataRef> {
-        self.const_data.clone()
     }
 
     pub fn get_relocations(&self) -> &[Relocation] {

@@ -546,6 +546,7 @@ pub enum MnemonicName {
     Div,
     Inc,
     Xor,
+    And,
     Or,
     Shl,
     Push,
@@ -588,6 +589,10 @@ lazy_static! {
         .opcode(0x31, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI)
         .reg(6);
+    pub static ref AND: Mnemonic = Mnemonic::new(MnemonicName::And)
+        .opcode(0x21, OperandEncoding::MR)
+        .opcode(0x81, OperandEncoding::MI)
+        .reg(4);
     pub static ref OR: Mnemonic = Mnemonic::new(MnemonicName::Or)
         .opcode(0x09, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI)

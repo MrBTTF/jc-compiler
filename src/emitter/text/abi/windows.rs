@@ -1,3 +1,4 @@
+use crate::emitter::stack::StackManager;
 use crate::emitter::variables::{ValueLocation, Variable};
 
 use super::super::{code_context::CodeContext, mnemonics::*};
@@ -20,32 +21,42 @@ impl From<Variable> for Arg {
 pub const ARG_REGISTERS: &[register::Register] =
     &[register::RCX, register::RDX, register::R8, register::R9];
 
-pub fn push_args(code_context: &mut CodeContext, args: &[Variable]) {
+pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args: &[Variable]) {
+    args.iter().enumerate().for_each(|(i, _)| {
+        code_context.add_slice(&stack.push_register(ARG_REGISTERS[i]));
+    });
+
     args.iter().enumerate().for_each(|(i, arg)| {
-        code_context.add(PUSH.op1(ARG_REGISTERS[i]));
         match &arg.value_loc {
             ValueLocation::Stack(stack_loc) => {
                 let stack_loc: u32 = stack_loc.into();
-                code_context.add(MOV.op1(ARG_REGISTERS[i]).op2(register::RBP));
-                code_context.add(SUB.op1(ARG_REGISTERS[i]).op2(stack_loc));
+                code_context.add_slice(&[
+                    MOV.op1(ARG_REGISTERS[i]).op2(register::RBP),
+                    SUB.op1(ARG_REGISTERS[i]).op2(stack_loc),
+                ]);
             }
-            ValueLocation::DataSection(data_loc) => {
-                code_context
-                    .add(MOV.op1(ARG_REGISTERS[i]).op2(*data_loc))
-                    .with_const_data(&arg.name, arg.as_vec());
+            ValueLocation::DataSection(_) => {
+                code_context.add(
+                    MOV.op1(ARG_REGISTERS[i])
+                        .op2(0_u64)
+                        .symbol(arg.name.clone()),
+                );
             }
         }
+
+        if !arg.reference {
+            code_context.add(
+                MOV.op1(ARG_REGISTERS[i])
+                    .op2(ARG_REGISTERS[i])
+                    .disp(Operand::Offset32(0)),
+            );
+        }
     });
-    if args.len() % 2 != 0 {
-        code_context.add(SUB.op1(register::RSP).op2(8_u32));
-    }
 }
 
-pub fn pop_args(code_context: &mut CodeContext, args_count: usize) {
-    if args_count % 2 != 0 {
-        code_context.add(ADD.op1(register::RSP).op2(8_u32));
-    }
-    (0..args_count).for_each(|i| {
-        code_context.add(POP.op1(ARG_REGISTERS[i]));
+pub fn pop_args(code_context: &mut CodeContext, stack: &mut StackManager, args_count: usize) {
+    (0..args_count).rev().for_each(|i| {
+        code_context
+            .add_slice(&stack.pop_register(crate::emitter::text::abi::linux::ARG_REGISTERS[i]));
     });
 }

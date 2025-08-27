@@ -90,15 +90,11 @@ fn compile_src(src: &str) -> String {
 
 #[cfg(target_os = "windows")]
 fn compile_src(src: &str) -> String {
-    let dest = if cfg!(target_os = "windows") {
-        env::current_dir()
-            .unwrap()
-            .join(&format!("local/bin/{src}.exe"))
-    } else {
-        env::current_dir()
-            .unwrap()
-            .join(&format!("local/bin/{src}"))
-    };
+    use std::process::Stdio;
+    let dest = env::current_dir()
+        .unwrap()
+        .join(&format!("local/bin/{src}.exe"));
+
     let src = env::current_dir()
         .unwrap()
         .join(&format!("tests/fixtures/{src}.jc"));
@@ -112,6 +108,8 @@ fn compile_src(src: &str) -> String {
         panic!("{}", String::from_utf8(child.stderr).unwrap());
     }
     let stdout = Command::new(dest.to_str().unwrap())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .unwrap()
         .stdout;

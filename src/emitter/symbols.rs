@@ -15,19 +15,19 @@ use super::variables::{ValueLocation, Variable};
 //     data_type: DataType,
 // }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolType {
     Data(DataSymbol),
     Text,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataSymbol {
     Comptime,
     Runtime,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Section {
     Undefined,
     Text,
@@ -51,7 +51,7 @@ pub struct Symbol {
     data: Vec<u8>,
 }
 impl Symbol {
-    fn new(
+    pub fn new(
         name: String,
         offset: usize,
         section: Section,

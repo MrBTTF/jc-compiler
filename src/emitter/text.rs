@@ -55,10 +55,17 @@ impl TextBuilder {
     }
 
     fn visit_ast(&mut self, block: &ast::Block) {
+        self.code_context.add_slice(&[
+            MOV.op1(register::RAX).op2(-16_i64 as u64),
+            AND.op1(register::RSP).op2(register::RAX),
+        ]);
         self.stack_manager.init_stack();
 
         let call = self.call("main");
         self.code_context.add_slice(&call);
+
+        self.code_context
+            .add_slice(&self.stack_manager.align_for_call());
         stdlib::exit(&mut self.code_context, 0);
 
         self.visit_block(block);
@@ -224,8 +231,13 @@ impl TextBuilder {
                         &mut self.stack_manager,
                         args.as_slice(),
                     );
+                    self.code_context
+                        .add_slice(&self.stack_manager.align_for_call());
 
-                    stdlib::print(&mut self.code_context, variable);
+                    stdlib::print(&mut self.code_context);
+
+                    self.code_context
+                        .add_slice(&self.stack_manager.unalign_after_call());
 
                     abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
                 }
@@ -349,7 +361,7 @@ impl TextBuilder {
         let mut code = vec![];
         for id in ids.iter() {
             let data = self.variables.get(id).unwrap();
-
+            dbg!(data);
             code.extend(match &data.value_loc {
                 ValueLocation::Stack(stack_loc) => match stack_loc {
                     StackLocation::Block(_) => {
