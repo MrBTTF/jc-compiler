@@ -242,15 +242,7 @@ impl TextBuilder {
                     abi::pop_args(&mut self.code_context, &mut self.stack_manager, args.len());
                 }
                 Value::Int(n) => {
-                    let mut format = self
-                        .variables
-                        .get("global::__printf_d_arg")
-                        .unwrap_or_else(|| panic!("undefined variable: global::__printf_d_arg"))
-                        .clone();
-
-                    format.reference = true;
-
-                    let args = &[format, variable.clone()];
+                    let args = &[variable.clone()];
 
                     abi::push_args(&mut self.code_context, &mut self.stack_manager, args);
 

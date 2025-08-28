@@ -92,10 +92,8 @@ pub fn build(
     let child = Command::new("lld-link")
         .args(&[
             object_file.to_str().unwrap(),
-            "local/libs/kernel32.lib",
-            "local/libs/ucrt.lib",
+            "/defaultlib:kernel32.lib",
             "/subsystem:console",
-            "/nodefaultlib",
             "/entry:_start",
             &format!("/out:{}", output_path.to_str().unwrap()),
         ])

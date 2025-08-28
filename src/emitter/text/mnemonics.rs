@@ -5,7 +5,6 @@ use crate::emitter::symbols::{self, DataSymbol, SymbolType};
 
 use self::register::RegisterSize;
 
-
 const REGISTER_EXT_INDEX: u8 = 0x30;
 const JMP_PREFIX: u8 = 0x0F;
 
@@ -82,7 +81,8 @@ pub mod register {
         DI = (0x7),
         R8 = (0x0, ext),
         R9 = (0x1, ext),
-        R10 = (0x2, ext)
+        R10 = (0x2, ext),
+        R11 = (0x3, ext)
     );
 
     // const AX: Register = Register::new(0x0, RegisterSize::W, false);
@@ -123,7 +123,7 @@ pub enum Operand {
 impl Operand {
     pub fn is_imm(&self) -> bool {
         match self {
-            Operand::Imm16(_) | Operand::Imm32(_) | Operand::Imm64(_) => true,
+            Operand::Imm8(_) | Operand::Imm16(_) | Operand::Imm32(_) | Operand::Imm64(_) => true,
             _ => false,
         }
     }
@@ -543,6 +543,7 @@ pub enum MnemonicName {
     Mov,
     Add,
     Sub,
+    Mul,
     Div,
     Inc,
     Xor,
@@ -579,8 +580,11 @@ lazy_static! {
         .opcode(0x29, OperandEncoding::MR)
         .opcode(0x81, OperandEncoding::MI)
         .reg(5);
+    pub static ref MUL: Mnemonic = Mnemonic::new(MnemonicName::Mul)
+        .opcode(0xF7, OperandEncoding::M)
+        .reg(4);
     pub static ref DIV: Mnemonic = Mnemonic::new(MnemonicName::Div)
-        .opcode(0xF7, OperandEncoding::MI)
+        .opcode(0xF7, OperandEncoding::M)
         .reg(6);
     pub static ref INC: Mnemonic = Mnemonic::new(MnemonicName::Inc)
         .opcode(0xFF, OperandEncoding::M)
@@ -598,8 +602,10 @@ lazy_static! {
         .opcode(0x81, OperandEncoding::MI)
         .reg(1);
     pub static ref SHL: Mnemonic = Mnemonic::new(MnemonicName::Shl)
-        .opcode(0x09, OperandEncoding::MR)
         .opcode(0xC1, OperandEncoding::MI)
+        .reg(4);
+    pub static ref SHL_CL: Mnemonic = Mnemonic::new(MnemonicName::Shl)
+        .opcode(0xD3, OperandEncoding::M)
         .reg(4);
     pub static ref PUSH: Mnemonic = Mnemonic::new(MnemonicName::Push)
         .opcode(0x50, OperandEncoding::OI)
@@ -632,6 +638,16 @@ lazy_static! {
         .has_jump_prefix();
     pub static ref JL: Mnemonic = Mnemonic::new(MnemonicName::Jl)
         .opcode(0x8C, OperandEncoding::D)
+        .rm(RM_DISP32)
+        .no_rex_w()
+        .has_jump_prefix();
+    pub static ref JGE: Mnemonic = Mnemonic::new(MnemonicName::Jge)
+        .opcode(0x8D, OperandEncoding::D)
+        .rm(RM_DISP32)
+        .no_rex_w()
+        .has_jump_prefix();
+    pub static ref JG: Mnemonic = Mnemonic::new(MnemonicName::Jg)
+        .opcode(0x8F, OperandEncoding::D)
         .rm(RM_DISP32)
         .no_rex_w()
         .has_jump_prefix();
@@ -737,9 +753,21 @@ mod tests {
         assert_eq!(instruction.as_vec(), expected);
     }
 
+     #[rstest]
+    #[case::RcxRax(register::R11, register::R11, vec ! [0x4D, 0x31, 0xDB])]
+    fn test_xor(
+        #[case] op1: impl Into<Operand>,
+        #[case] op2: impl Into<Operand>,
+        #[case] expected: Vec<u8>,
+    ) {
+        let mut instruction = XOR.op1(op1).op2(op2);
+        assert_eq!(instruction.as_vec(), expected);
+    }
+
     #[rstest]
     #[case::Eax(register::ECX, vec ! [0xF7, 0xF1])]
     #[case::Rcx(register::RCX, vec ! [0x48, 0xF7, 0xF1])]
+    #[case::Rcx(register::R10, vec ! [0x49, 0xF7, 0xF2])]
     fn test_div(#[case] op1: impl Into<Operand>, #[case] expected: Vec<u8>) {
         let mut instruction = DIV.op1(op1);
         assert_eq!(instruction.as_vec(), expected);

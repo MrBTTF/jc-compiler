@@ -128,20 +128,6 @@ pub struct VariablesCollector {
 
 impl VariablesCollector {
     pub fn visit_ast(&mut self, block: &ast::Block) {
-        let number_fmt: String = "%d\0".to_string();
-        let value_type = Value::String(number_fmt);
-        let printf_d_arg = "global::__printf_d_arg";
-        self.variables.insert(
-            printf_d_arg.to_string(),
-            Variable::new(
-                &printf_d_arg,
-                value_type,
-                false,
-                ValueLocation::DataSection(0),
-            ),
-        );
-        self.add_to_scope(&block.scope, vec![printf_d_arg.to_string()]);
-
         self.visit_block(block);
     }
 

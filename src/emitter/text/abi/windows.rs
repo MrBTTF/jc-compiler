@@ -56,7 +56,6 @@ pub fn push_args(code_context: &mut CodeContext, stack: &mut StackManager, args:
 
 pub fn pop_args(code_context: &mut CodeContext, stack: &mut StackManager, args_count: usize) {
     (0..args_count).rev().for_each(|i| {
-        code_context
-            .add_slice(&stack.pop_register(crate::emitter::text::abi::linux::ARG_REGISTERS[i]));
+        code_context.add_slice(&stack.pop_register(ARG_REGISTERS[i]));
     });
 }
