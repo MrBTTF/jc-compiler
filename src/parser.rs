@@ -292,9 +292,14 @@ fn _loop<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::Loop>, &'a
     ))
 }
 
-fn unary<'a>(tokens: &'a [Token], scope: &str) -> Result<(Option<ast::UnaryOperation>, &'a [Token])> {
+fn unary<'a>(
+    tokens: &'a [Token],
+    scope: &str,
+) -> Result<(Option<ast::UnaryOperation>, &'a [Token])> {
     if let Ok(tokens) = match_next(tokens, Token::Ref) {
-        let (Some(expr), tokens): (Option<ast::Expression>, &[Token]) = expression(tokens, scope).context("Expected expression")? else {
+        let (Some(expr), tokens): (Option<ast::Expression>, &[Token]) =
+            expression(tokens, scope).context("Expected expression")?
+        else {
             return Ok((None, tokens));
         };
         return Ok((Some(ast::UnaryOperation::Ref(Box::new(expr))), tokens));

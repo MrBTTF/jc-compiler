@@ -13,7 +13,6 @@ use exe::build;
 use exe::sections::IMAGE_BASE;
 
 pub mod ast;
-mod variables;
 #[cfg(target_os = "linux")]
 pub mod elf;
 #[cfg(target_os = "windows")]
@@ -21,6 +20,7 @@ pub mod exe;
 mod stack;
 mod symbols;
 mod text;
+mod variables;
 
 pub fn build_executable(ast: &ast::Block, output_path: PathBuf) {
     let (variables, scopes) = variables::build_variables(ast);

@@ -18,6 +18,7 @@ fn _get_std_handle(code_context: &mut CodeContext, std_handle: StdHandle) {
         MOV.op1(register::R10).op2(register::RAX),
     ]);
 }
+
 fn _print(code_context: &mut CodeContext) {
     code_context.add_slice(&[
         MOV.op1(register::RCX).op2(register::R10),
@@ -31,6 +32,7 @@ fn _print(code_context: &mut CodeContext) {
         ADD.op1(register::RSP).op2(48_u32),
     ]);
 }
+
 pub fn itoa(code_context: &mut CodeContext) {
     code_context.add_slice(&[
         MOV.op1(register::RAX).op2(ARG_REGISTERS[0]),
