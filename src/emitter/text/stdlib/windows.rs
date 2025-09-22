@@ -15,21 +15,24 @@ fn _get_std_handle(code_context: &mut CodeContext, std_handle: StdHandle) {
         MOV.op1(ARG_REGISTERS[0]).op2(std_handle as u64),
         CALL.op1(Operand::Offset32(0))
             .symbol("GetStdHandle".to_string()),
-        MOV.op1(register::R10).op2(register::RAX),
     ]);
 }
 
 fn _print(code_context: &mut CodeContext) {
     code_context.add_slice(&[
-        MOV.op1(register::RCX).op2(register::R10),
-        MOV.op1(register::RDX).op2(register::R8),
-        MOV.op1(register::R8).op2(register::R9),
-        SUB.op1(register::RSP).op2(48_u32),
-        MOV.op1(register::R9).op2(register::RSP), // Store written bytes
-        SUB.op1(register::R9).op2(16_u32),
+        MOV.op1(register::R8).op2(ARG_REGISTERS[0]), // pointer to string length
+        MOV.op1(ARG_REGISTERS[0]).op2(ARG_REGISTERS[1]),
+        MOV.op1(ARG_REGISTERS[1]).op2(register::R8),
+        ADD.op1(ARG_REGISTERS[1]).op2(mem::size_of::<u64>() as u32), // skip string length
+        MOV.op1(register::R8)
+            .op2(register::R8)
+            .disp(Operand::Offset32(0)), // deref string length
+        SUB.op1(register::RSP).op2(64_u32),                          // why not 32 shadow space?
+        MOV.op1(register::R9).op2(register::RSP),                    // Store written bytes
+        ADD.op1(register::R9).op2(48_u32),
         CALL.op1(Operand::Offset32(0))
             .symbol("WriteFile".to_string()),
-        ADD.op1(register::RSP).op2(48_u32),
+        ADD.op1(register::RSP).op2(64_u32),
     ]);
 }
 
@@ -85,36 +88,55 @@ pub fn itoa(code_context: &mut CodeContext) {
     ]);
     code_context.add_slice(&[
         PUSH.op1(register::R8),
-        MOV.op1(register::R8).op2(register::RSP),
-        MOV.op1(register::RAX).op2(8_u64),
-        SUB.op1(register::RAX).op2(register::R11),
-        ADD.op1(register::R8).op2(register::RAX),
+        MOV.op1(register::RAX).op2(register::RSP),
+        MOV.op1(register::RCX).op2(8_u64),
+        SUB.op1(register::RCX).op2(register::R11),
+        ADD.op1(register::RAX).op2(register::RCX),
     ]);
 }
 
 pub fn print(code_context: &mut CodeContext) {
     code_context.add_slice(&[
-        MOV.op1(register::R9).op2(ARG_REGISTERS[0]), // string length
-        MOV.op1(register::R8).op2(register::R9),
-        ADD.op1(register::R8).op2(mem::size_of::<u64>() as u32), // skip string length
-        MOV.op1(register::R9)
-            .op2(register::R9)
-            .disp(Operand::Offset32(0)),
+        PUSH.op1(ARG_REGISTERS[0]),
+        SUB.op1(register::RSP).op2(8_u32),
     ]);
     _get_std_handle(code_context, StdHandle::Stdout);
+    code_context.add_slice(&[
+        ADD.op1(register::RSP).op2(8_u32),
+        POP.op1(ARG_REGISTERS[0]),
+        MOV.op1(ARG_REGISTERS[1]).op2(register::RAX),
+    ]);
     _print(code_context);
 }
 
 pub fn printd(code_context: &mut CodeContext) {
     itoa(code_context);
-    code_context.add_slice(&[PUSH.op1(register::R9), PUSH.op1(register::RAX)]);
+    code_context.add_slice(&[
+        MOV.op1(register::RSP).op2(register::RAX),
+        PUSH.op1(register::R9),
+        SUB.op1(register::RAX).op2(mem::size_of::<u64>() as u32), // make RAX point to length
+        MOV.op1(ARG_REGISTERS[0]).op2(register::RAX),
+        PUSH.op1(ARG_REGISTERS[0]),
+    ]);
+
     _get_std_handle(code_context, StdHandle::Stdout);
+
+    code_context.add_slice(&[
+        POP.op1(ARG_REGISTERS[0]),
+        MOV.op1(ARG_REGISTERS[1]).op2(register::RAX),
+        MOV.op1(register::R10).op2(register::RSP),
+        MOV.op1(register::R9).op2(-16_i64 as u64),
+        AND.op1(register::RSP).op2(register::R9),
+        PUSH.op1(register::R10), // push adress before alignment
+        SUB.op1(register::RSP).op2(8_u32),
+    ]);
     _print(code_context);
     code_context.add_slice(&[
-        POP.op1(register::RAX),
-        POP.op1(register::R9),
-        ADD.op1(register::RSP).op2(register::R9), // drop string length
-        ADD.op1(register::RSP).op2(register::RAX), // drop remainder = string length % 8
+        ADD.op1(register::RSP).op2(8_u32),
+        POP.op1(register::R9), // pop address before alignment
+        MOV.op1(register::RSP).op2(register::R9),
+        POP.op1(register::R9),                    // pop string length
+        ADD.op1(register::RSP).op2(register::R9), // drop string
     ]);
 }
 
